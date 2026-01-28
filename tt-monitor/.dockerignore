@@ -1,0 +1,7 @@
+node_modules
+*.log
+.git
+__pycache__
+*.pyc
+.env
+frontend/dist

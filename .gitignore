@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+
+# Build outputs
+tt-monitor/frontend/dist/
+*.egg-info/
+
+# Environment
+.env
+.env.local
+
+# Logs
+*.log
+benchmark.log
+
+# Database
+*.db
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+model_cache/
