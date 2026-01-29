@@ -1,8 +1,12 @@
 #!/bin/bash
 set -eo pipefail
 
-# Activate virtual environment
-source "${PYTHON_ENV_DIR}/bin/activate"
+# Activate virtual environment if it exists
+if [ -n "${PYTHON_ENV_DIR}" ] && [ -f "${PYTHON_ENV_DIR}/bin/activate" ]; then
+    source "${PYTHON_ENV_DIR}/bin/activate"
+elif [ -f "/opt/venv/bin/activate" ]; then
+    source /opt/venv/bin/activate
+fi
 
 # Export required environment
 export VLLM_TARGET_DEVICE=tt
@@ -18,7 +22,10 @@ if [ "${TT_METAL_RESET_DEVICES:-0}" = "1" ]; then
     fi
 fi
 
-cd "${TT_METAL_HOME}"
+# Change to TT_METAL_HOME if set
+if [ -n "${TT_METAL_HOME}" ]; then
+    cd "${TT_METAL_HOME}"
+fi
 
 # Override model from environment if set
 if [ -n "${HF_MODEL}" ] && ! echo "$@" | grep -q -- "--model"; then

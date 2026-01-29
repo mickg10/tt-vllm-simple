@@ -1,0 +1,55 @@
+networks:
+  tt-net:
+    driver: bridge
+
+services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    networks:
+      - tt-net
+    ports:
+      - "3000:3000"
+    environment:
+      - OPENAI_API_KEY=not-needed
+      - OPENAI_API_BASE_URL=http://vllm-tt:8088/v1
+      - OLLAMA_API_BASE_URL=
+      - ENV=prod
+      - PORT=3000
+      - USE_OLLAMA_DOCKER=false
+      - SCARF_NO_ANALYTICS=true
+      - DO_NOT_TRACK=true
+      - ANONYMIZED_TELEMETRY=false
+      - RAG_EMBEDDING_MODEL=
+      - RAG_EMBEDDING_ENGINE=
+      - USE_EMBEDDING_MODEL_DOCKER=
+      - ENABLE_RAG_WEB_LOADER_SSL_VERIFICATION=False
+      - ENABLE_RAG_WEB_SEARCH=False
+      - HF_HUB_OFFLINE=1
+    volumes:
+      - open-webui-data:/app/backend/data
+    restart: unless-stopped
+    depends_on:
+      vllm-tt:
+        condition: service_healthy
+
+  tt-monitor:
+    build:
+      context: ../tt-monitor
+    image: tt-monitor:latest
+    networks:
+      - tt-net
+    ports:
+      - "9090:9090"
+    volumes:
+      - /sys:/sys:ro
+      - tt-monitor-data:/data
+    environment:
+      - TT_MONITOR_MOCK=${TT_MONITOR_MOCK:-0}
+      - FRONTEND_PATH=/app/frontend/dist
+      - VLLM_METRICS_URL=http://vllm-tt:8088/metrics
+      - TT_MONITOR_DATA_DIR=/data
+    restart: unless-stopped
+
+volumes:
+  open-webui-data:
+  tt-monitor-data:
