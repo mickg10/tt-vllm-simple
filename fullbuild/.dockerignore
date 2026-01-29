@@ -1,0 +1,3 @@
+# Minimal context needed - everything is cloned in Dockerfile
+*
+!entrypoint.sh

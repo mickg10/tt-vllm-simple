@@ -1,0 +1,25 @@
+services:
+  vllm-tt:
+    build:
+      context: .
+    image: vllm-tt-fullbuild:latest
+    network_mode: host
+    devices:
+      - /dev/tenstorrent:/dev/tenstorrent
+    volumes:
+      - /dev/hugepages-1G:/dev/hugepages-1G
+      - ${HOME}/.cache/huggingface:/cache/huggingface
+    environment:
+      - HF_MODEL=${HF_MODEL:-Qwen/Qwen3-0.6B}
+      - HF_TOKEN=${HF_TOKEN:-}
+      - HF_HOME=/cache/huggingface
+      - VLLM_RPC_TIMEOUT=${VLLM_RPC_TIMEOUT:-300000}
+      - TT_METAL_RESET_DEVICES=${TT_METAL_RESET_DEVICES:-0}
+      # Galaxy/multi-device configuration
+      # Options: N150, N300, T3K, TG (Galaxy)
+      - MESH_DEVICE=${MESH_DEVICE:-N300}
+      - WH_ARCH_YAML=${WH_ARCH_YAML:-}
+      - TT_METAL_NUM_COMMAND_QUEUES=${TT_METAL_NUM_COMMAND_QUEUES:-}
+    ipc: host
+    privileged: true
+    restart: unless-stopped
