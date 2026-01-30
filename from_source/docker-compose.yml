@@ -32,7 +32,7 @@ services:
       - WH_ARCH_YAML=${WH_ARCH_YAML:-}
       - TT_METAL_NUM_COMMAND_QUEUES=${TT_METAL_NUM_COMMAND_QUEUES:-}
     command:
-      - --max-model-len=${MAX_MODEL_LEN:-65536}
+      - --max-model-len=${MAX_MODEL_LEN:-40960}
       - --max-num-seqs=${MAX_NUM_SEQS:-256}
       - --block-size=64
       - --port=8088
