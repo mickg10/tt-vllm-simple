@@ -51,9 +51,7 @@ export function VLLMPanel({ metrics }: Props) {
         <div className="vllm-metric">
           <div className="label">TPS</div>
           <div className="value">
-            {metrics.avg_time_per_output_token_ms > 0
-              ? (1000 / metrics.avg_time_per_output_token_ms).toFixed(1)
-              : '0'}
+            {metrics.generation_tps?.toFixed(1) || '0'}
             <span className="unit">tok/s</span>
           </div>
         </div>

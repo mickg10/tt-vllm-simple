@@ -20,6 +20,9 @@ services:
     volumes:
       - /dev/hugepages-1G:/dev/hugepages-1G
       - ${HOME}/.cache/huggingface:/cache/huggingface
+      - ${HOME}/.cache/tt-model-cache:/tt-metal/model_cache
+      - ${HOME}/.cache/ttnn:/root/.cache/ttnn
+      - ${HOME}/.cache/tt-metal-cache:/root/.cache/tt-metal-cache
     environment:
       - HF_MODEL=${HF_MODEL:-Qwen/Qwen3-0.6B}
       - HF_TOKEN=${HF_TOKEN:-}
@@ -29,10 +32,11 @@ services:
       - WH_ARCH_YAML=${WH_ARCH_YAML:-}
       - TT_METAL_NUM_COMMAND_QUEUES=${TT_METAL_NUM_COMMAND_QUEUES:-}
     command:
-      - --max-model-len=${MAX_MODEL_LEN:-32768}
-      - --max-num-seqs=${MAX_NUM_SEQS:-32}
+      - --max-model-len=${MAX_MODEL_LEN:-65536}
+      - --max-num-seqs=${MAX_NUM_SEQS:-256}
       - --block-size=64
       - --port=8088
+      - --enable-prefix-caching
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8088/health"]
       interval: 30s

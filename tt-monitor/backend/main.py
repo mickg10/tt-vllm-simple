@@ -89,6 +89,12 @@ class VLLMMetrics:
     avg_tpot: float = 0.0  # Average time per output token
     avg_e2e_latency: float = 0.0  # Average end-to-end latency
     model_name: str = ""
+    generation_tps: float = 0.0  # Tokens per second (calculated rate)
+    prompt_tps: float = 0.0  # Prompt tokens per second
+
+
+# State for TPS calculation
+_last_metrics: Optional[VLLMMetrics] = None
 
 
 # ============== Database Functions ==============
@@ -123,7 +129,9 @@ def init_db():
                 generation_tokens_total REAL,
                 avg_ttft REAL,
                 avg_tpot REAL,
-                avg_e2e_latency REAL
+                avg_e2e_latency REAL,
+                generation_tps REAL,
+                prompt_tps REAL
             );
 
             CREATE INDEX IF NOT EXISTS idx_device_metrics_timestamp ON device_metrics(timestamp);
@@ -171,12 +179,13 @@ def store_vllm_metrics(metrics: VLLMMetrics):
         conn.execute(
             """INSERT INTO vllm_metrics
                (timestamp, model_name, requests_running, requests_waiting, gpu_cache_usage,
-                prompt_tokens_total, generation_tokens_total, avg_ttft, avg_tpot, avg_e2e_latency)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                prompt_tokens_total, generation_tokens_total, avg_ttft, avg_tpot, avg_e2e_latency,
+                generation_tps, prompt_tps)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (metrics.timestamp, metrics.model_name, metrics.requests_running,
              metrics.requests_waiting, metrics.gpu_cache_usage, metrics.prompt_tokens_total,
              metrics.generation_tokens_total, metrics.avg_ttft, metrics.avg_tpot,
-             metrics.avg_e2e_latency)
+             metrics.avg_e2e_latency, metrics.generation_tps, metrics.prompt_tps)
         )
         conn.commit()
 
@@ -250,7 +259,7 @@ def get_vllm_history(time_range: str = "1h") -> list[dict]:
         rows = conn.execute(
             """SELECT timestamp, model_name, requests_running, requests_waiting,
                       gpu_cache_usage, prompt_tokens_total, generation_tokens_total,
-                      avg_ttft, avg_tpot, avg_e2e_latency
+                      avg_ttft, avg_tpot, avg_e2e_latency, generation_tps, prompt_tps
                FROM vllm_metrics
                WHERE timestamp > ?
                ORDER BY timestamp""",
@@ -436,6 +445,7 @@ def get_histogram_avg(metrics: dict, base_name: str) -> float:
 
 async def collect_vllm_metrics() -> Optional[VLLMMetrics]:
     """Collect metrics from vLLM's Prometheus endpoint."""
+    global _last_metrics
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.get(VLLM_METRICS_URL)
@@ -443,6 +453,7 @@ async def collect_vllm_metrics() -> Optional[VLLMMetrics]:
                 return None
 
             metrics = parse_prometheus_metrics(response.text)
+            now = time.time()
 
             # Extract key metrics
             requests_running = 0.0
@@ -472,8 +483,20 @@ async def collect_vllm_metrics() -> Optional[VLLMMetrics]:
             avg_tpot = get_histogram_avg(metrics, "vllm:time_per_output_token_seconds")
             avg_e2e = get_histogram_avg(metrics, "vllm:e2e_request_latency_seconds")
 
-            return VLLMMetrics(
-                timestamp=time.time(),
+            # Calculate TPS (tokens per second) from rate of change
+            generation_tps = 0.0
+            prompt_tps = 0.0
+            if _last_metrics is not None:
+                dt = now - _last_metrics.timestamp
+                if dt > 0:
+                    generation_tps = (generation_tokens - _last_metrics.generation_tokens_total) / dt
+                    prompt_tps = (prompt_tokens - _last_metrics.prompt_tokens_total) / dt
+                    # Clamp to non-negative (counter resets)
+                    generation_tps = max(0.0, generation_tps)
+                    prompt_tps = max(0.0, prompt_tps)
+
+            result = VLLMMetrics(
+                timestamp=now,
                 requests_running=requests_running,
                 requests_waiting=requests_waiting,
                 gpu_cache_usage=gpu_cache_usage,
@@ -483,7 +506,12 @@ async def collect_vllm_metrics() -> Optional[VLLMMetrics]:
                 avg_tpot=avg_tpot,
                 avg_e2e_latency=avg_e2e,
                 model_name=model_name,
+                generation_tps=generation_tps,
+                prompt_tps=prompt_tps,
             )
+
+            _last_metrics = result
+            return result
     except Exception as e:
         print(f"Error collecting vLLM metrics: {e}")
         return None
@@ -588,6 +616,8 @@ async def get_vllm():
         "gpu_cache_usage_percent": metrics.gpu_cache_usage,
         "prompt_tokens_total": metrics.prompt_tokens_total,
         "generation_tokens_total": metrics.generation_tokens_total,
+        "generation_tps": round(metrics.generation_tps, 1),  # Tokens per second
+        "prompt_tps": round(metrics.prompt_tps, 1),  # Prompt tokens per second
         "avg_time_to_first_token_ms": metrics.avg_ttft * 1000,
         "avg_time_per_output_token_ms": metrics.avg_tpot * 1000,
         "avg_e2e_latency_s": metrics.avg_e2e_latency,

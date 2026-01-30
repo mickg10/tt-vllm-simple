@@ -35,6 +35,8 @@ export interface VLLMMetrics {
   gpu_cache_usage_percent: number;
   prompt_tokens_total: number;
   generation_tokens_total: number;
+  generation_tps: number;  // Aggregate tokens per second
+  prompt_tps: number;      // Prompt tokens per second
   avg_time_to_first_token_ms: number;
   avg_time_per_output_token_ms: number;
   avg_e2e_latency_s: number;
@@ -59,6 +61,8 @@ export interface VLLMHistoryPoint {
   gpu_cache_usage: number;
   prompt_tokens_total: number;
   generation_tokens_total: number;
+  generation_tps: number;
+  prompt_tps: number;
   avg_ttft: number;
   avg_tpot: number;
   avg_e2e_latency: number;
