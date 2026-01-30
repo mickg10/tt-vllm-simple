@@ -33,7 +33,7 @@ services:
       - TT_METAL_NUM_COMMAND_QUEUES=${TT_METAL_NUM_COMMAND_QUEUES:-}
     command:
       - --max-model-len=${MAX_MODEL_LEN:-40960}
-      - --max-num-seqs=${MAX_NUM_SEQS:-256}
+      - --max-num-seqs=${MAX_NUM_SEQS:-64}
       - --block-size=64
       - --port=8088
       - --enable-prefix-caching
