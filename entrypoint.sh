@@ -11,9 +11,37 @@ fi
 # Export required environment
 export VLLM_TARGET_DEVICE=tt
 
-# Device reset if requested (must run as root)
+# TT Device check and auto-reset
+# Check if devices are responsive; if not, reset them
+check_and_reset_devices() {
+    if ! command -v tt-smi &>/dev/null; then
+        echo "WARNING: tt-smi not found, skipping device check"
+        return 0
+    fi
+
+    echo "Checking TT device status..."
+
+    # Try a quick tt-smi query with timeout - if it hangs, devices need reset
+    if timeout 15 tt-smi -ls >/dev/null 2>&1; then
+        echo "TT devices responding normally."
+        return 0
+    fi
+
+    echo "TT devices unresponsive, performing reset..."
+    tt-smi -r 2>/dev/null || echo "WARNING: tt-smi reset returned error, continuing anyway"
+    echo "Waiting for devices to stabilize..."
+    sleep 10
+    echo "Reset complete."
+}
+
+# Auto-reset if enabled (default: enabled)
+if [ "${TT_AUTO_RESET:-1}" != "0" ]; then
+    check_and_reset_devices
+fi
+
+# Manual reset if explicitly requested
 if [ "${TT_METAL_RESET_DEVICES:-0}" = "1" ]; then
-    echo "Resetting Tenstorrent devices..."
+    echo "Forcing TT device reset (TT_METAL_RESET_DEVICES=1)..."
     if command -v tt-smi &>/dev/null; then
         tt-smi -r 2>/dev/null || echo "WARNING: tt-smi reset failed, continuing anyway"
         sleep 5
