@@ -3,9 +3,10 @@
 # Run 'make help' for available targets
 
 SHELL := /bin/bash
-.PHONY: help build-prebuilt build-source test-prebuilt test-source \
-        run-prebuilt run-source stop-prebuilt stop-source \
-        logs-prebuilt logs-source clean reset-devices
+.PHONY: help build-prebuilt build-source build-dev test-prebuilt test-source test-dev \
+        run-prebuilt run-source run-dev stop-prebuilt stop-source stop-dev \
+        logs-prebuilt logs-source logs-dev clean reset-devices \
+        workspace-init workspace-create workspace-list workspace-delete workspace-status workspace-sync
 
 # No default target - must specify explicitly
 .DEFAULT_GOAL := help
@@ -15,6 +16,7 @@ PORT ?= 8088
 MODEL ?= Qwen/Qwen3-0.6B
 WAIT_TIMEOUT ?= 300
 BUILD_JOBS ?= 16
+WORKSPACE_PATH ?= $(shell ./scripts/workspace.sh path main 2>/dev/null || echo "")
 
 #==============================================================================
 # Help
@@ -25,23 +27,36 @@ help:
 	@echo ""
 	@echo "Build targets:"
 	@echo "  make build-prebuilt     Build prebuilt variant (fast)"
-	@echo "  make build-source       Build from-source variant (slow, ~45min)"
+	@echo "  make build-source       Build from-source variant (slow)"
+	@echo "  make build-dev          Build dev variant (uses bind mounts)"
 	@echo ""
 	@echo "Run targets:"
 	@echo "  make run-prebuilt       Start prebuilt stack (vLLM + WebUI + Monitor)"
 	@echo "  make run-source         Start source-built stack"
+	@echo "  make run-dev            Start dev stack with workspace sources"
 	@echo ""
 	@echo "Test targets:"
 	@echo "  make test-prebuilt      Test prebuilt variant (builds, starts, tests, stops)"
 	@echo "  make test-source        Test source variant (builds, starts, tests, stops)"
+	@echo "  make test-dev           Test dev variant with workspace sources"
 	@echo ""
 	@echo "Stop targets:"
 	@echo "  make stop-prebuilt      Stop prebuilt stack"
 	@echo "  make stop-source        Stop source stack"
+	@echo "  make stop-dev           Stop dev stack"
+	@echo ""
+	@echo "Workspace targets (agentic development):"
+	@echo "  make workspace-init     Clone repos as bare, create main workspace"
+	@echo "  make workspace-create   Create feature workspace (NAME=<name>)"
+	@echo "  make workspace-list     List all workspaces"
+	@echo "  make workspace-delete   Delete workspace (NAME=<name>)"
+	@echo "  make workspace-status   Show status (NAME=<name>, default: main)"
+	@echo "  make workspace-sync     Fetch from origin and upstream"
 	@echo ""
 	@echo "Utility targets:"
 	@echo "  make logs-prebuilt      Follow prebuilt logs"
 	@echo "  make logs-source        Follow source logs"
+	@echo "  make logs-dev           Follow dev logs"
 	@echo "  make reset-devices      Reset TT devices (run before starting)"
 	@echo "  make clean              Remove all containers and images"
 	@echo ""
@@ -50,6 +65,7 @@ help:
 	@echo "  MODEL=$(MODEL)          Model to serve"
 	@echo "  WAIT_TIMEOUT=$(WAIT_TIMEOUT)       Seconds to wait for healthy"
 	@echo "  BUILD_JOBS=$(BUILD_JOBS)          Parallel build jobs"
+	@echo "  WORKSPACE_PATH=<path>   Workspace path for dev builds"
 
 #==============================================================================
 # Build Targets
@@ -62,6 +78,10 @@ build-prebuilt:
 build-source:
 	@echo "Building source variant with $(BUILD_JOBS) parallel jobs..."
 	cd from_source && BUILD_JOBS=$(BUILD_JOBS) docker compose build
+
+build-dev:
+	@echo "Building dev variant..."
+	cd dev && docker compose build
 
 #==============================================================================
 # Run Targets
@@ -97,6 +117,31 @@ run-source:
 	@echo ""
 	@echo "Run 'make logs-source' to follow logs"
 
+run-dev:
+	@echo "Starting dev stack..."
+	@if [ ! -f dev/.env ]; then \
+		echo "Creating dev/.env from .env.example..."; \
+		cp dev/.env.example dev/.env; \
+	fi
+	@if [ -z "$(WORKSPACE_PATH)" ]; then \
+		echo "ERROR: WORKSPACE_PATH not set. Run 'make workspace-init' first or set WORKSPACE_PATH."; \
+		exit 1; \
+	fi
+	@if [ ! -d "$(WORKSPACE_PATH)/tt-metal" ]; then \
+		echo "ERROR: tt-metal not found at $(WORKSPACE_PATH)/tt-metal"; \
+		echo "Make sure WORKSPACE_PATH points to a valid workspace."; \
+		exit 1; \
+	fi
+	cd dev && WORKSPACE_PATH=$(WORKSPACE_PATH) docker compose up -d
+	@echo ""
+	@echo "Dev stack starting with workspace: $(WORKSPACE_PATH)"
+	@echo "Services will be available at:"
+	@echo "  vLLM API:    http://localhost:$(PORT)/v1"
+	@echo "  Open WebUI:  http://localhost:3000"
+	@echo "  TT Monitor:  http://localhost:9090"
+	@echo ""
+	@echo "Run 'make logs-dev' to follow logs"
+
 #==============================================================================
 # Stop Targets
 #==============================================================================
@@ -108,6 +153,10 @@ stop-prebuilt:
 stop-source:
 	@echo "Stopping source stack..."
 	cd from_source && docker compose down
+
+stop-dev:
+	@echo "Stopping dev stack..."
+	cd dev && docker compose down
 
 #==============================================================================
 # Test Targets
@@ -163,6 +212,35 @@ test-source: build-source
 	@echo "Source tests complete"
 	@echo "============================================"
 
+test-dev: build-dev
+	@echo "============================================"
+	@echo "Testing dev variant"
+	@echo "============================================"
+	@if [ -z "$(WORKSPACE_PATH)" ]; then \
+		echo "ERROR: WORKSPACE_PATH not set. Run 'make workspace-init' first."; \
+		exit 1; \
+	fi
+	@# Ensure stopped first
+	cd dev && docker compose down 2>/dev/null || true
+	@# Copy env if needed
+	@if [ ! -f dev/.env ]; then cp dev/.env.example dev/.env; fi
+	@# Start stack
+	cd dev && WORKSPACE_PATH=$(WORKSPACE_PATH) docker compose up -d
+	@# Wait for healthy (longer timeout for dev builds)
+	@echo "Waiting for vLLM to be healthy (timeout: $(WAIT_TIMEOUT)s)..."
+	@./scripts/wait_for_healthy.sh $(WAIT_TIMEOUT) $(PORT)
+	@# Run tests
+	@echo ""
+	@./tests/run_all.sh $(PORT) "$(MODEL)"
+	@# Stop stack
+	@echo ""
+	@echo "Stopping stack..."
+	cd dev && docker compose down
+	@echo ""
+	@echo "============================================"
+	@echo "Dev tests complete"
+	@echo "============================================"
+
 #==============================================================================
 # Utility Targets
 #==============================================================================
@@ -172,6 +250,47 @@ logs-prebuilt:
 
 logs-source:
 	cd from_source && docker compose logs -f
+
+logs-dev:
+	cd dev && docker compose logs -f
+
+#==============================================================================
+# Workspace Targets
+#==============================================================================
+
+workspace-init:
+	@echo "Initializing workspace infrastructure..."
+	@if [ ! -f scripts/workspace.env ]; then \
+		echo "Creating scripts/workspace.env from example..."; \
+		cp scripts/workspace.env.example scripts/workspace.env; \
+		echo ""; \
+		echo "IMPORTANT: Edit scripts/workspace.env to set your fork URLs before running again."; \
+		exit 1; \
+	fi
+	./scripts/workspace.sh init
+
+workspace-create:
+	@if [ -z "$(NAME)" ]; then \
+		echo "Usage: make workspace-create NAME=<workspace-name>"; \
+		exit 1; \
+	fi
+	./scripts/workspace.sh create $(NAME)
+
+workspace-list:
+	./scripts/workspace.sh list
+
+workspace-delete:
+	@if [ -z "$(NAME)" ]; then \
+		echo "Usage: make workspace-delete NAME=<workspace-name>"; \
+		exit 1; \
+	fi
+	./scripts/workspace.sh delete $(NAME)
+
+workspace-status:
+	./scripts/workspace.sh status $(NAME)
+
+workspace-sync:
+	./scripts/workspace.sh sync
 
 reset-devices:
 	@echo "Resetting TT devices..."
@@ -184,6 +303,7 @@ clean:
 	@echo "Stopping all containers..."
 	cd prebuilt && docker compose down --rmi local 2>/dev/null || true
 	cd from_source && docker compose down --rmi local 2>/dev/null || true
+	cd dev && docker compose down --rmi local 2>/dev/null || true
 	@echo "Removing images..."
-	docker rmi vllm-tt:latest vllm-tt-source:latest tt-monitor:latest 2>/dev/null || true
+	docker rmi vllm-tt:latest vllm-tt-source:latest vllm-tt-dev:latest tt-monitor:latest 2>/dev/null || true
 	@echo "Clean complete"

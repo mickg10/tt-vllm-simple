@@ -29,3 +29,6 @@ Thumbs.db
 
 # Docker
 model_cache/
+
+# Workspace configuration (contains user-specific fork URLs)
+scripts/workspace.env

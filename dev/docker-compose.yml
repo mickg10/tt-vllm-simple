@@ -1,0 +1,57 @@
+include:
+  - path: ../base/docker-compose.yml
+
+services:
+  vllm-tt:
+    build:
+      context: ..
+      dockerfile: dev/Dockerfile
+    image: vllm-tt-dev:latest
+    networks:
+      - tt-net
+    ports:
+      - "8088:8088"
+    devices:
+      - /dev/tenstorrent:/dev/tenstorrent
+    volumes:
+      # Bind mount source directories from workspace
+      - ${WORKSPACE_PATH}/tt-metal:/tt-metal:rw
+      - ${WORKSPACE_PATH}/vllm:/vllm:rw
+      # Standard caches
+      - /dev/hugepages-1G:/dev/hugepages-1G
+      - ${HOME}/.cache/huggingface:/cache/huggingface
+      - ${HOME}/.cache/tt-model-cache:/tt-metal/model_cache
+      - ${HOME}/.cache/ttnn:/root/.cache/ttnn
+      - ${HOME}/.cache/tt-metal-cache:/root/.cache/tt-metal-cache
+      # Persist tt-metal build artifacts to avoid rebuilding
+      - tt-metal-build:/tt-metal/build
+    environment:
+      - HF_MODEL=${HF_MODEL:-Qwen/Qwen3-0.6B}
+      - HF_TOKEN=${HF_TOKEN:-}
+      - HF_HOME=/cache/huggingface
+      - VLLM_RPC_TIMEOUT=${VLLM_RPC_TIMEOUT:-600000}
+      - MESH_DEVICE=${MESH_DEVICE:-N300}
+      - WH_ARCH_YAML=${WH_ARCH_YAML:-}
+      - TT_METAL_NUM_COMMAND_QUEUES=${TT_METAL_NUM_COMMAND_QUEUES:-}
+      - BUILD_JOBS=${BUILD_JOBS:-16}
+      # Dev-specific: skip build if already done
+      - SKIP_TT_METAL_BUILD=${SKIP_TT_METAL_BUILD:-0}
+    command:
+      - --max-model-len=${MAX_MODEL_LEN:-32768}
+      - --max-num-seqs=${MAX_NUM_SEQS:-32}
+      - --block-size=64
+      - --port=8088
+      - --enable-prefix-caching
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8088/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 600s
+      retries: 3
+    ipc: host
+    privileged: true
+    restart: unless-stopped
+
+volumes:
+  tt-metal-build:
+    name: tt-metal-build-cache
