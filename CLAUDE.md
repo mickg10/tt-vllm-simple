@@ -130,7 +130,15 @@ make stop-source
 
 ## Agentic Development Workflow
 
-For coordinated development across docker_tt, tt-metal, and vllm repositories.
+For coordinated development across docker_tt, tt-metal, and vllm repositories by AI agents (Claude, Codex, etc.) or human developers.
+
+### Why Worktrees?
+
+This setup uses git worktrees instead of submodules because:
+- **AI agents can work independently** - Each repo has its own git history; no submodule SHA coordination
+- **Parallel workspaces** - Multiple feature branches can exist simultaneously without conflicts
+- **Clean commits** - Agents commit directly to each repo with proper git history
+- **Easy PRs** - Push feature branches to your forks and create PRs to upstream
 
 ### Architecture
 
@@ -160,14 +168,34 @@ Uses sibling bare repos with worktrees (not submodules):
 
 ### Setup
 
-```bash
-# 1. Configure your forks
-cp scripts/workspace.env.example scripts/workspace.env
-# Edit workspace.env with your fork URLs
+#### 1. Create GitHub Forks
 
-# 2. Initialize (clones bare repos, creates main workspace)
+Fork these repositories on GitHub (click "Fork" button on each):
+- https://github.com/tenstorrent/tt-metal → your fork
+- https://github.com/tenstorrent/vllm → your fork
+
+You'll push feature branches to your forks and create PRs back to upstream.
+
+#### 2. Configure Fork URLs
+
+```bash
+cp scripts/workspace.env.example scripts/workspace.env
+```
+
+Edit `scripts/workspace.env` with your fork URLs:
+```bash
+DOCKER_TT_FORK=https://github.com/<your-username>/tt-vllm-simple.git
+TT_METAL_FORK=https://github.com/<your-username>/tt-metal.git
+VLLM_FORK=https://github.com/<your-username>/vllm.git
+```
+
+#### 3. Initialize Workspaces
+
+```bash
 make workspace-init
 ```
+
+This clones all repos as bare repositories and creates the `main` workspace with worktrees.
 
 ### Workflow
 
