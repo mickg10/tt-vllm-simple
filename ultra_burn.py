@@ -19,6 +19,7 @@ THREADS = 32
 MAX_TOKENS = 16  # Minimal decode - pure prefill power
 
 stats = {"reqs": 0, "power_max": 0}
+stats_lock = threading.Lock()
 
 def worker(tid):
     while True:
@@ -30,7 +31,8 @@ def worker(tid):
                 "temperature": 0.7
             }, timeout=300)
             if resp.status_code == 200:
-                stats["reqs"] += 1
+                with stats_lock:
+                    stats["reqs"] += 1
         except:
             time.sleep(0.5)
 
@@ -41,9 +43,12 @@ def monitor():
             if r.status_code == 200:
                 d = r.json()
                 power = d.get("totals", {}).get("power", 0)
-                stats["power_max"] = max(stats["power_max"], power)
                 temps = [dev.get("temperature", 0) for dev in d.get("devices", [])]
-                print(f"\r[{time.strftime('%H:%M:%S')}] Power: {power:>5.0f}W | Max: {stats['power_max']:>5.0f}W | Reqs: {stats['reqs']:>6} | Temps: {'/'.join(f'{t:.0f}' for t in temps)}  ", end="", flush=True)
+                with stats_lock:
+                    stats["power_max"] = max(stats["power_max"], power)
+                    reqs = stats["reqs"]
+                    max_power = stats["power_max"]
+                print(f"\r[{time.strftime('%H:%M:%S')}] Power: {power:>5.0f}W | Max: {max_power:>5.0f}W | Reqs: {reqs:>6} | Temps: {'/'.join(f'{t:.0f}' for t in temps)}  ", end="", flush=True)
         except:
             pass
         time.sleep(1)
@@ -60,4 +65,6 @@ try:
     while True:
         time.sleep(60)
 except KeyboardInterrupt:
-    print(f"\n\nMax power observed: {stats['power_max']:.0f}W")
+    with stats_lock:
+        max_power = stats["power_max"]
+    print(f"\n\nMax power observed: {max_power:.0f}W")

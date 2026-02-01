@@ -12,7 +12,7 @@ fi
 export VLLM_TARGET_DEVICE=tt
 
 # TT Device check and auto-reset
-# Check if devices are responsive; if not, reset them
+# Check if devices are responsive; if not, reset them (up to 4 attempts)
 check_and_reset_devices() {
     if ! command -v tt-smi &>/dev/null; then
         echo "WARNING: tt-smi not found, skipping device check"
@@ -27,11 +27,35 @@ check_and_reset_devices() {
         return 0
     fi
 
-    echo "TT devices unresponsive, performing reset..."
-    tt-smi -r 2>/dev/null || echo "WARNING: tt-smi reset returned error, continuing anyway"
-    echo "Waiting for devices to stabilize..."
-    sleep 10
-    echo "Reset complete."
+    echo "TT devices unresponsive, attempting reset..."
+
+    local max_attempts=4
+    local attempt=1
+
+    while [ $attempt -le $max_attempts ]; do
+        echo "Reset attempt $attempt of $max_attempts..."
+
+        if tt-smi -r 2>/dev/null; then
+            echo "Waiting for devices to stabilize..."
+            sleep 10
+
+            # Verify devices are now responsive
+            if timeout 15 tt-smi -ls >/dev/null 2>&1; then
+                echo "TT devices recovered after reset."
+                return 0
+            fi
+            echo "Devices still unresponsive after reset."
+        else
+            echo "WARNING: tt-smi reset command failed."
+        fi
+
+        attempt=$((attempt + 1))
+        [ $attempt -le $max_attempts ] && sleep 5
+    done
+
+    echo "ERROR: Failed to reset TT devices after $max_attempts attempts."
+    echo "Please check hardware connections and try 'tt-smi -r' manually."
+    exit 1
 }
 
 # Auto-reset if enabled (default: enabled)
