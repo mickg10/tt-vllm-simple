@@ -35,6 +35,16 @@ log() {
     echo "[workspace] $*"
 }
 
+ensure_origin_fetch_refspec() {
+    # Some bare repos can end up without a remote.origin.fetch refspec, which
+    # prevents origin/* refs from being created/updated. Ensure a standard
+    # "all branches" refspec exists.
+    local repo_bare="$1"
+    if ! git -C "$repo_bare" config --get-all remote.origin.fetch >/dev/null 2>&1; then
+        git -C "$repo_bare" config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
+    fi
+}
+
 error() {
     echo "[workspace] ERROR: $*" >&2
     exit 1
@@ -76,15 +86,18 @@ cmd_init() {
     if [ ! -d "$DOCKER_TT_BARE" ]; then
         log "Cloning docker_tt as bare repo..."
         git clone --bare "$DOCKER_TT_FORK" "$DOCKER_TT_BARE"
+        ensure_origin_fetch_refspec "$DOCKER_TT_BARE"
         # No upstream for docker_tt (it IS the orchestration repo)
     else
         log "docker_tt.git already exists, skipping..."
+        ensure_origin_fetch_refspec "$DOCKER_TT_BARE"
     fi
 
     # tt-metal bare repo
     if [ ! -d "$TT_METAL_BARE" ]; then
         log "Cloning tt-metal as bare repo (this may take a while)..."
         git clone --bare "$TT_METAL_FORK" "$TT_METAL_BARE"
+        ensure_origin_fetch_refspec "$TT_METAL_BARE"
 
         # Add upstream remote
         if [ -n "$TT_METAL_UPSTREAM" ]; then
@@ -93,12 +106,14 @@ cmd_init() {
         fi
     else
         log "tt-metal.git already exists, skipping..."
+        ensure_origin_fetch_refspec "$TT_METAL_BARE"
     fi
 
     # vllm bare repo
     if [ ! -d "$VLLM_BARE" ]; then
         log "Cloning vllm as bare repo..."
         git clone --bare "$VLLM_FORK" "$VLLM_BARE"
+        ensure_origin_fetch_refspec "$VLLM_BARE"
 
         # Add upstream remote
         if [ -n "$VLLM_UPSTREAM" ]; then
@@ -107,6 +122,7 @@ cmd_init() {
         fi
     else
         log "vllm.git already exists, skipping..."
+        ensure_origin_fetch_refspec "$VLLM_BARE"
     fi
 
     # Create main workspace
@@ -330,6 +346,7 @@ cmd_sync() {
             local repo_name=$(basename "$repo_bare" .git)
             log "Fetching $repo_name..."
 
+            ensure_origin_fetch_refspec "$repo_bare"
             git -C "$repo_bare" fetch origin --prune 2>/dev/null || \
                 log "  Warning: Failed to fetch from origin"
 

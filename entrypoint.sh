@@ -84,6 +84,41 @@ if [ -n "${HF_MODEL}" ] && ! echo "$@" | grep -q -- "--model"; then
     set -- "--model" "${HF_MODEL}" "$@"
 fi
 
+# For GLM-4.7-Flash, disable thinking by default at the chat-template layer.
+# This keeps user-facing outputs concise and avoids long hidden-reasoning runs,
+# while still allowing explicit opt-in via request chat_template_kwargs.
+if [ "${GLM_DEFAULT_DISABLE_THINKING:-0}" = "1" ] \
+    && [ "${HF_MODEL:-}" = "zai-org/GLM-4.7-Flash" ] \
+    && ! echo " $* " | grep -q -- " --chat-template "; then
+    export GLM_CHAT_TEMPLATE_FILE="${GLM_CHAT_TEMPLATE_FILE:-/tmp/glm47_default_no_think.jinja}"
+
+    if python - <<'PY' >/dev/null 2>&1
+import os
+from transformers import AutoTokenizer
+
+model_id = os.environ.get("HF_MODEL", "")
+output_path = os.environ.get("GLM_CHAT_TEMPLATE_FILE", "/tmp/glm47_default_no_think.jinja")
+
+pattern = "enable_thinking is defined and not enable_thinking"
+replacement = "enable_thinking is not defined or not enable_thinking"
+
+tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=False)
+chat_template = getattr(tokenizer, "chat_template", None)
+if not chat_template:
+    raise RuntimeError("Tokenizer did not provide a chat_template.")
+
+patched_template = chat_template.replace(pattern, replacement)
+with open(output_path, "w", encoding="utf-8") as f:
+    f.write(patched_template)
+PY
+    then
+        echo "Using GLM chat template with thinking disabled by default: ${GLM_CHAT_TEMPLATE_FILE}"
+        set -- "--chat-template" "${GLM_CHAT_TEMPLATE_FILE}" "$@"
+    else
+        echo "WARNING: Could not generate GLM no-thinking chat template; continuing with model default."
+    fi
+fi
+
 echo "Starting vLLM server with args: $@"
 
 # Use a Python wrapper that registers TT models before starting vLLM.
@@ -91,6 +126,17 @@ echo "Starting vLLM server with args: $@"
 # --disable-frontend-multiprocessing keeps everything in one process.
 exec python -c "
 import os, sys, runpy
+
+# TT-NN uses loguru throughout; default loguru level is DEBUG and can be very
+# noisy during weight/cache loading. Configure it early to avoid I/O overhead.
+try:
+    from loguru import logger
+
+    logger.remove()
+    logger.add(sys.stderr, level=os.environ.get('LOGURU_LEVEL', 'INFO'))
+except Exception:
+    pass
+
 from vllm import ModelRegistry
 
 # Register TT model architectures (must be done before engine init)
@@ -100,6 +146,7 @@ ModelRegistry.register_model('TTQwen2ForCausalLM', 'models.tt_transformers.tt.ge
 ModelRegistry.register_model('TTQwen3ForCausalLM', 'models.tt_transformers.tt.generator_vllm:QwenForCausalLM')
 ModelRegistry.register_model('TTMistralForCausalLM', 'models.tt_transformers.tt.generator_vllm:MistralForCausalLM')
 ModelRegistry.register_model('TTGemma3ForConditionalGeneration', 'models.tt_transformers.tt.generator_vllm:Gemma3ForConditionalGeneration')
+ModelRegistry.register_model('TTGlm4MoeLiteForCausalLM', 'models.demos.glm4_moe_lite.tt.generator_vllm:Glm4MoeLiteForCausalLM')
 ModelRegistry.register_model('TTArceeForCausalLM', 'models.tt_transformers.tt.generator_vllm:TTArceeForCausalLM')
 
 runpy.run_module('vllm.entrypoints.openai.api_server', run_name='__main__')
