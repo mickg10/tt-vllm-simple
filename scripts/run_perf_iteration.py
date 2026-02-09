@@ -596,6 +596,7 @@ def main() -> int:
     ap.add_argument("--per-test-timeout-s", type=int, default=420)
     ap.add_argument("--request-timeout-s", type=int, default=120)
     ap.add_argument("--prime-timeout-s", type=int, default=2400)
+    ap.add_argument("--health-timeout-s", type=int, default=360)
     ap.add_argument("--repeat-count", type=int, default=10)
     ap.add_argument("--suites", default="repeat10,linear10,prefix5")
     ap.add_argument("--warmup-cases", default="")
@@ -606,6 +607,8 @@ def main() -> int:
     ap.add_argument("--glm-env-file", default="dev/.env.glm47")
     ap.add_argument("--qwen-env-file", default="dev/.env.qwen32b")
     ap.add_argument("--glm-overrides-json", default="{}")
+    ap.add_argument("--glm-remote-base", default="http://localhost:8087/v1")
+    ap.add_argument("--glm-remote-model", default="zai-org/GLM-4.7-Flash")
     args = ap.parse_args()
 
     cwd = Path(__file__).resolve().parents[1]
@@ -651,7 +654,7 @@ def main() -> int:
     ttmonitor_running = True
 
     # Endpoint 1: GLM remote reference (always first)
-    glm_remote = Endpoint("glm_remote_8087", "http://localhost:8087/v1", "mlx-community/GLM-4.7-Flash-8bit", True)
+    glm_remote = Endpoint("glm_remote_8087", args.glm_remote_base, args.glm_remote_model, True)
     remote_res = run_cases(
         glm_remote,
         cases,
@@ -683,7 +686,10 @@ def main() -> int:
             ],
             cwd,
         )
-        startup_glm_s = wait_health("http://localhost:8088/health")
+        startup_glm_s = wait_health(
+            "http://localhost:8088/health",
+            timeout_s=int(args.health_timeout_s),
+        )
         glm_local = Endpoint("glm_local_tt_8088", "http://localhost:8088/v1", "zai-org/GLM-4.7-Flash", True)
         glm_prime: dict[str, Any] = {"ok": False}
         print(f"[{glm_local.key}] priming (timeout={int(args.prime_timeout_s)}s)...", flush=True)
@@ -726,7 +732,10 @@ def main() -> int:
         ],
         cwd,
     )
-    startup_qwen_s = wait_health("http://localhost:8088/health")
+    startup_qwen_s = wait_health(
+        "http://localhost:8088/health",
+        timeout_s=int(args.health_timeout_s),
+    )
     qwen_local = Endpoint("qwen_local_tt_8088", "http://localhost:8088/v1", "Qwen/Qwen3-32B", False)
     qwen_prime: dict[str, Any] = {"ok": False}
     print(f"[{qwen_local.key}] priming (timeout={int(args.prime_timeout_s)}s)...", flush=True)
@@ -767,7 +776,10 @@ def main() -> int:
         ],
         cwd,
     )
-    _ = wait_health("http://localhost:8088/health")
+    _ = wait_health(
+        "http://localhost:8088/health",
+        timeout_s=int(args.health_timeout_s),
+    )
 
     now = dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
     json_path = artifact_dir / f"iteration_{args.iteration_id}.json"
@@ -786,10 +798,13 @@ def main() -> int:
             "per_test_timeout_s": args.per_test_timeout_s,
             "request_timeout_s": request_timeout_s,
             "prime_timeout_s": int(args.prime_timeout_s),
+            "health_timeout_s": int(args.health_timeout_s),
             "repeat_count": args.repeat_count,
             "word_to_token_ratio": args.word_to_token_ratio,
             "suites": requested,
             "glm_overrides": glm_overrides,
+            "glm_remote_base": args.glm_remote_base,
+            "glm_remote_model": args.glm_remote_model,
             "case_count": len(cases),
             "warmup_case_count": len(warmup_cases),
         },
