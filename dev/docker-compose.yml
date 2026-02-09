@@ -44,6 +44,10 @@ services:
       - WH_ARCH_YAML=${WH_ARCH_YAML:-}
       - TT_METAL_NUM_COMMAND_QUEUES=${TT_METAL_NUM_COMMAND_QUEUES:-}
       - BUILD_JOBS=${BUILD_JOBS:-16}
+      # Reduce loguru verbosity (TT-NN uses loguru; default is DEBUG).
+      - LOGURU_LEVEL=${LOGURU_LEVEL:-INFO}
+      # TTNN runtime debug knob (can make ops blocking). Use only for correctness bring-up.
+      - TTNN_CONFIG_OVERRIDES=${TTNN_CONFIG_OVERRIDES:-}
       # Dev-specific: skip build if already done
       - SKIP_TT_METAL_BUILD=${SKIP_TT_METAL_BUILD:-0}
       # GLM UX/perf default: disable thinking unless explicitly re-enabled.
