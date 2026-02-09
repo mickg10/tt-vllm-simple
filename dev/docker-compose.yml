@@ -17,12 +17,21 @@ services:
       # Bind mount source directories from workspace
       - ${WORKSPACE_PATH}/tt-metal:/tt-metal:rw
       - ${WORKSPACE_PATH}/vllm:/vllm:rw
+      # Git worktree support (tt-metal/vllm are typically git worktrees).
+      # The worktree .git file points to the bare repo under /home/ttuser/src_docker/*.git,
+      # so we mount those paths into the container to keep `git describe` etc working.
+      - ${WORKSPACE_PATH}/tt-metal:${WORKSPACE_PATH}/tt-metal:rw
+      - ${WORKSPACE_PATH}/vllm:${WORKSPACE_PATH}/vllm:rw
+      - /home/ttuser/src_docker/tt-metal.git:/home/ttuser/src_docker/tt-metal.git:ro
+      - /home/ttuser/src_docker/vllm.git:/home/ttuser/src_docker/vllm.git:ro
       # Standard caches
       - /dev/hugepages-1G:/dev/hugepages-1G
       - ${HOME}/.cache/huggingface:/cache/huggingface
       - ${HOME}/.cache/tt-model-cache:/tt-metal/model_cache
       - ${HOME}/.cache/ttnn:/root/.cache/ttnn
       - ${HOME}/.cache/tt-metal-cache:/root/.cache/tt-metal-cache
+      # Persist the python venv across container recreates (model switches, etc.)
+      - vllm-tt-venv:/opt/venv
       # Persist tt-metal build artifacts to avoid rebuilding
       - tt-metal-build:/tt-metal/build
     environment:
@@ -30,18 +39,57 @@ services:
       - HF_TOKEN=${HF_TOKEN:-}
       - HF_HOME=/cache/huggingface
       - VLLM_RPC_TIMEOUT=${VLLM_RPC_TIMEOUT:-600000}
+      - VLLM_ENGINE_ITERATION_TIMEOUT_S=${VLLM_ENGINE_ITERATION_TIMEOUT_S:-}
       - MESH_DEVICE=${MESH_DEVICE:-N300}
       - WH_ARCH_YAML=${WH_ARCH_YAML:-}
       - TT_METAL_NUM_COMMAND_QUEUES=${TT_METAL_NUM_COMMAND_QUEUES:-}
       - BUILD_JOBS=${BUILD_JOBS:-16}
       # Dev-specific: skip build if already done
       - SKIP_TT_METAL_BUILD=${SKIP_TT_METAL_BUILD:-0}
+      # GLM UX/perf default: disable thinking unless explicitly re-enabled.
+      - GLM_DEFAULT_DISABLE_THINKING=${GLM_DEFAULT_DISABLE_THINKING:-1}
+      - GLM_CHAT_TEMPLATE_FILE=${GLM_CHAT_TEMPLATE_FILE:-/tmp/glm47_default_no_think.jinja}
+      # GLM-4.7-Flash bring-up knobs (ignored by other models)
+      - GLM4_MOE_LITE_CACHE_DIR=${GLM4_MOE_LITE_CACHE_DIR:-}
+      - GLM4_MOE_LITE_NUM_LAYERS=${GLM4_MOE_LITE_NUM_LAYERS:-}
+      - GLM4_MOE_LITE_DEBUG_ALLOW_PARTIAL_LAYERS=${GLM4_MOE_LITE_DEBUG_ALLOW_PARTIAL_LAYERS:-}
+      - GLM4_MOE_LITE_KV_CACHE_TT_DTYPE=${GLM4_MOE_LITE_KV_CACHE_TT_DTYPE:-}
+      - GLM4_MOE_LITE_PREFILL_IMPL=${GLM4_MOE_LITE_PREFILL_IMPL:-}
+      - GLM4_MOE_LITE_ENABLE_MOE=${GLM4_MOE_LITE_ENABLE_MOE:-}
+      - GLM4_MOE_LITE_DENSE_TT_DTYPE=${GLM4_MOE_LITE_DENSE_TT_DTYPE:-}
+      - GLM4_MOE_LITE_EXPERTS_TT_DTYPE=${GLM4_MOE_LITE_EXPERTS_TT_DTYPE:-}
+      - GLM4_MOE_LITE_TP=${GLM4_MOE_LITE_TP:-}
+      - GLM4_MOE_LITE_FUSE_QKV_A=${GLM4_MOE_LITE_FUSE_QKV_A:-}
+      - GLM4_MOE_LITE_MOE_FP32_ACC=${GLM4_MOE_LITE_MOE_FP32_ACC:-}
+      - GLM4_MOE_LITE_MOE_EXPERTS_IMPL=${GLM4_MOE_LITE_MOE_EXPERTS_IMPL:-}
+      - GLM4_MOE_LITE_MOE_ROUTER_IMPL=${GLM4_MOE_LITE_MOE_ROUTER_IMPL:-}
+      - GLM4_MOE_LITE_MOE_SPARSE_CHUNK_TOKENS=${GLM4_MOE_LITE_MOE_SPARSE_CHUNK_TOKENS:-}
+      - GLM4_MOE_LITE_MOE_SPARSE_FIDELITY=${GLM4_MOE_LITE_MOE_SPARSE_FIDELITY:-}
+      - GLM4_MOE_LITE_MOE_SPARSE_FP32_ACC=${GLM4_MOE_LITE_MOE_SPARSE_FP32_ACC:-}
+      - GLM4_MOE_LITE_MOE_SPARSE_APPROX=${GLM4_MOE_LITE_MOE_SPARSE_APPROX:-}
+      - GLM4_MOE_LITE_MOE_SPARSE_DEBUG=${GLM4_MOE_LITE_MOE_SPARSE_DEBUG:-}
+      - GLM4_MOE_LITE_MOE_SPARSE_DISPATCH_IMPL=${GLM4_MOE_LITE_MOE_SPARSE_DISPATCH_IMPL:-}
+      - GLM4_MOE_LITE_MOE_SPARSE_FORCE_DENSE=${GLM4_MOE_LITE_MOE_SPARSE_FORCE_DENSE:-}
+      - GLM4_MOE_LITE_MLA_SCALE_MODE=${GLM4_MOE_LITE_MLA_SCALE_MODE:-}
+      - GLM4_MOE_LITE_MLA_FIDELITY=${GLM4_MOE_LITE_MLA_FIDELITY:-}
+      - GLM4_MOE_LITE_MLA_APPROX=${GLM4_MOE_LITE_MLA_APPROX:-}
+      - GLM4_MOE_LITE_MLA_FP32_ACC=${GLM4_MOE_LITE_MLA_FP32_ACC:-}
+      - GLM4_MOE_LITE_MLA_USE_V_CACHE_SLICE=${GLM4_MOE_LITE_MLA_USE_V_CACHE_SLICE:-}
+      - GLM4_MOE_LITE_PROFILE=${GLM4_MOE_LITE_PROFILE:-}
+      - GLM4_MOE_LITE_PROFILE_LAYER=${GLM4_MOE_LITE_PROFILE_LAYER:-}
+      - GLM4_MOE_LITE_PROFILE_PRINT_EVERY=${GLM4_MOE_LITE_PROFILE_PRINT_EVERY:-}
     command:
       - --max-model-len=${MAX_MODEL_LEN:-32768}
       - --max-num-seqs=${MAX_NUM_SEQS:-32}
       - --block-size=64
       - --port=8088
       - --enable-prefix-caching
+      # Required for OpenAI "tools" requests (used by opencode and many UIs).
+      - --enable-auto-tool-choice
+      - --tool-call-parser=glm47
+      # Keep GLM reasoning in a structured field when available.
+      - --reasoning-parser=glm45
+      - --override-tt-config=${OVERRIDE_TT_CONFIG:-{}}
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8088/health"]
       interval: 30s
@@ -55,3 +103,5 @@ services:
 volumes:
   tt-metal-build:
     name: tt-metal-build-cache
+  vllm-tt-venv:
+    name: vllm-tt-venv-cache

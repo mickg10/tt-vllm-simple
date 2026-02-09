@@ -14,14 +14,26 @@ response=$(curl -sf "http://localhost:${PORT}/v1/chat/completions" \
     -d "{
         \"model\": \"$MODEL\",
         \"messages\": [{\"role\": \"user\", \"content\": \"Say hello in exactly 3 words.\"}],
-        \"max_tokens\": 20
+        \"max_tokens\": 20,
+        \"temperature\": 0
     }") || {
     echo "FAIL: Chat completion request failed"
     exit 1
 }
 
-# Check for choices in response
-if echo "$response" | grep -q '"choices"'; then
+# Check for a non-empty content in the first choice.
+if printf '%s' "$response" | python3 -c '
+import json, sys
+obj = json.load(sys.stdin)
+choices = obj.get("choices") or []
+if not choices:
+    raise SystemExit(2)
+msg = (choices[0] or {}).get("message") or {}
+content = msg.get("content")
+if not isinstance(content, str) or not content.strip():
+    raise SystemExit(3)
+' 
+then
     echo "PASS: Chat completion succeeded"
     echo "Response:"
     echo "$response" | python3 -m json.tool 2>/dev/null || echo "$response"
