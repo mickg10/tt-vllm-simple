@@ -8,6 +8,13 @@ elif [ -f "/opt/venv/bin/activate" ]; then
     source /opt/venv/bin/activate
 fi
 
+# ttnn reads TTNN_CONFIG_OVERRIDES as JSON at import time. If the variable is
+# present but empty, json.loads("") will raise, breaking vLLM's TT platform
+# detection (which imports ttnn).
+if [ "${TTNN_CONFIG_OVERRIDES+x}" = "x" ] && [ -z "${TTNN_CONFIG_OVERRIDES}" ]; then
+    unset TTNN_CONFIG_OVERRIDES
+fi
+
 # Export required environment
 export VLLM_TARGET_DEVICE=tt
 

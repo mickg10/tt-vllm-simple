@@ -44,11 +44,14 @@ services:
       - WH_ARCH_YAML=${WH_ARCH_YAML:-}
       - TT_METAL_NUM_COMMAND_QUEUES=${TT_METAL_NUM_COMMAND_QUEUES:-}
       - BUILD_JOBS=${BUILD_JOBS:-16}
+      # Reduce loguru verbosity (TT-NN uses loguru; default is DEBUG).
+      - LOGURU_LEVEL=${LOGURU_LEVEL:-INFO}
+      # TTNN runtime debug knob (can make ops blocking). Use only for correctness bring-up.
+      - TTNN_CONFIG_OVERRIDES=${TTNN_CONFIG_OVERRIDES:-}
       # Dev-specific: skip build if already done
       - SKIP_TT_METAL_BUILD=${SKIP_TT_METAL_BUILD:-0}
       - TT_LLAMA_TEXT_VER=${TT_LLAMA_TEXT_VER:-tt_transformers}
       - OVERRIDE_TT_CONFIG=${OVERRIDE_TT_CONFIG:-}
-      - LOGURU_LEVEL=${LOGURU_LEVEL:-INFO}
       # GLM UX/perf default: disable thinking unless explicitly re-enabled.
       - GLM_DEFAULT_DISABLE_THINKING=${GLM_DEFAULT_DISABLE_THINKING:-1}
       - GLM_CHAT_TEMPLATE_FILE=${GLM_CHAT_TEMPLATE_FILE:-/tmp/glm47_default_no_think.jinja}
