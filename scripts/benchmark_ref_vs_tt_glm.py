@@ -215,7 +215,7 @@ def _write_markdown(report: dict[str, Any], md_path: Path) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ref-base", default="http://localhost:8087/v1")
-    parser.add_argument("--ref-model", default="mlx-community/GLM-4.7-Flash-8bit")
+    parser.add_argument("--ref-model", default="zai-org/GLM-4.7-Flash")
     parser.add_argument("--tt-base", default="http://localhost:8088/v1")
     parser.add_argument("--tt-model", default="zai-org/GLM-4.7-Flash")
     parser.add_argument("--max-tokens", type=int, default=96)
