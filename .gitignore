@@ -11,6 +11,7 @@ tt-monitor/frontend/dist/
 # Environment
 .env
 .env.local
+dev/.tmp.env.*
 
 # Logs
 *.log
