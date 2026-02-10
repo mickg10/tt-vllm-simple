@@ -64,6 +64,12 @@ ENV TT_METAL_HOME=/tt-metal
 ENV PYTHONPATH=/tt-metal
 ENV VLLM_TARGET_DEVICE=tt
 
+# Prefer ULFM-enabled OpenMPI (provides MPIX_* symbols used by tt-metal).
+# The openmpi-ulfm .deb installs into /opt/openmpi-v5.0.7-ulfm without
+# updating system alternatives.
+ENV PATH="/opt/openmpi-v5.0.7-ulfm/bin:${PATH}"
+ENV LD_LIBRARY_PATH="/opt/openmpi-v5.0.7-ulfm/lib:${LD_LIBRARY_PATH}"
+
 # Copy entrypoints (context is parent directory)
 COPY dev/dev-entrypoint.sh /usr/local/bin/dev-entrypoint.sh
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
