@@ -258,6 +258,19 @@ Each repo has two remotes:
 
 Configure in `scripts/workspace.env`.
 
+## Active Porting Efforts
+
+Each model bring-up lives on its own branch (same name across all three repos) with a
+`WORKLOG_*.md` file tracking status, run commands, and known issues. Detailed research
+and iteration logs live outside git in `/home/ttuser/src_docker/plan/<model_name>/`.
+
+### GLM-4.7-Flash (GLM-4, GLM4 MoE Lite)
+1. Switch to the `glm47_flash` branch (exists on docker_tt, tt-metal fork, vllm fork)
+2. Read `WORKLOG_GLM47_FLASH.md` for current status, known issues, and run commands
+3. The workspace is at `ws/glm47_flash/` — all three repos have matching branches
+4. tt-metal fork: https://github.com/mickg10/tt-metal/tree/glm47_flash
+5. vllm fork: https://github.com/mickg10/vllm/tree/glm47_flash
+
 ## Upstream Repositories
 
 - tt-metal: https://github.com/tenstorrent/tt-metal (branch: main)

@@ -158,6 +158,25 @@ make stop-source
 make stop-dev
 ```
 
+## Active Model Bring-ups
+
+| Model | Branch | Status | Throughput | Fork Repos |
+|-------|--------|--------|------------|------------|
+| GLM-4.7-Flash | `glm47_flash` | Functional (correctness verified) | ~6 tok/s | [tt-metal](https://github.com/mickg10/tt-metal/tree/glm47_flash), [vllm](https://github.com/mickg10/vllm/tree/glm47_flash) |
+
+To resume GLM-4.7-Flash work:
+```bash
+# Set up workspace (if not already done)
+make workspace-create NAME=glm47_flash
+
+# Or if workspace exists, switch to the branch
+cd ws/glm47_flash/docker_tt
+git checkout glm47_flash
+
+# See the worklog for current status and run commands
+cat WORKLOG_GLM47_FLASH.md
+```
+
 ## Supported Models
 
 Models with TT backend support:
