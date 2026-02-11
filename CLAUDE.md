@@ -273,6 +273,31 @@ and iteration logs live outside git in `/home/ttuser/src_docker/plan/<model_name
 5. tt-metal fork: https://github.com/mickg10/tt-metal/tree/glm47_flash
 6. vllm fork: https://github.com/mickg10/vllm/tree/glm47_flash
 
+## Team-Based Performance Optimization
+
+For multi-agent performance sprints, use Claude Code's team infrastructure
+(`TeamCreate`, `TaskCreate`, `SendMessage`).
+
+### Team Plan
+
+Full plan: `/home/ttuser/src_docker/plan/glm47_flash/claude_team_glm47_plan.md`
+Quick ref: `AGENTS.md` in this directory.
+
+### Key Rules
+
+1. **Always consult Codex** (`mcp__codex-cli__codex`) at every architectural decision
+2. **Never break Qwen-32B** -- run regression gate after every change
+3. **Feature-flag everything** -- new optimizations behind env vars with safe defaults
+4. **Work in worktrees** -- all changes in `ws/glm47_flash/`, never in main `docker_tt/`
+5. **Record everything** -- benchmark results go to `plan/glm47_flash/perf-opt.md`
+
+### Quick Launch
+
+```python
+TeamCreate(team_name="glm-perf-sprint", description="GLM-4.7-Flash 6->30 tok/s optimization")
+# Then spawn agents per plan/glm47_flash/claude_team_glm47_plan.md
+```
+
 ## Upstream Repositories
 
 - tt-metal: https://github.com/tenstorrent/tt-metal (branch: main)
