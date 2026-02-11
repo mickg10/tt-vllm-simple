@@ -105,7 +105,7 @@ services:
     command:
       - --max-model-len=${MAX_MODEL_LEN:-32768}
       - --max-num-seqs=${MAX_NUM_SEQS:-32}
-      - --block-size=64
+      - --block-size=${VLLM_BLOCK_SIZE:-64}
       - --port=8088
       - --enable-prefix-caching
       # Required for OpenAI "tools" requests (used by opencode and many UIs).
