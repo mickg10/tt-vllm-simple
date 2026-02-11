@@ -153,6 +153,7 @@ ModelRegistry.register_model('TTQwen2ForCausalLM', 'models.tt_transformers.tt.ge
 ModelRegistry.register_model('TTQwen3ForCausalLM', 'models.tt_transformers.tt.generator_vllm:QwenForCausalLM')
 ModelRegistry.register_model('TTMistralForCausalLM', 'models.tt_transformers.tt.generator_vllm:MistralForCausalLM')
 ModelRegistry.register_model('TTGemma3ForConditionalGeneration', 'models.tt_transformers.tt.generator_vllm:Gemma3ForConditionalGeneration')
+ModelRegistry.register_model('TTDeepseekV3ForCausalLM', 'models.demos.deepseek_v3.tt.generator_vllm:DeepseekV3ForCausalLM')
 ModelRegistry.register_model('TTGlm4MoeLiteForCausalLM', 'models.demos.glm4_moe_lite.tt.generator_vllm:Glm4MoeLiteForCausalLM')
 ModelRegistry.register_model('TTArceeForCausalLM', 'models.tt_transformers.tt.generator_vllm:TTArceeForCausalLM')
 
