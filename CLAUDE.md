@@ -258,6 +258,46 @@ Each repo has two remotes:
 
 Configure in `scripts/workspace.env`.
 
+## Active Porting Efforts
+
+Each model bring-up lives on its own branch (same name across all three repos) with a
+`WORKLOG_*.md` file tracking status, run commands, and known issues. Detailed research
+and iteration logs live outside git in `/home/ttuser/src_docker/plan/<model_name>/`.
+
+### GLM-4.7-Flash (GLM-4, GLM4 MoE Lite)
+1. Create the workspace: `make workspace-create NAME=glm47_flash`
+   (This fetches from origin and checks out existing `glm47_flash` branches automatically.)
+2. Read `ws/glm47_flash/docker_tt/WORKLOG_GLM47_FLASH.md` for run commands and current status
+3. Read `ws/glm47_flash/docker_tt/PLAN_GLM47_FLASH.md` for architecture, history, and next steps
+4. The workspace is at `ws/glm47_flash/` -- all three repos have matching branches
+5. tt-metal fork: https://github.com/mickg10/tt-metal/tree/glm47_flash
+6. vllm fork: https://github.com/mickg10/vllm/tree/glm47_flash
+
+## Team-Based Performance Optimization
+
+For multi-agent performance sprints, use Claude Code's team infrastructure
+(`TeamCreate`, `TaskCreate`, `SendMessage`).
+
+### Team Plan
+
+Full plan: `/home/ttuser/src_docker/plan/glm47_flash/claude_team_glm47_plan.md`
+Quick ref: `AGENTS.md` in this directory.
+
+### Key Rules
+
+1. **Always consult Codex** (`mcp__codex-cli__codex`) at every architectural decision
+2. **Never break Qwen-32B** -- run regression gate after every change
+3. **Feature-flag everything** -- new optimizations behind env vars with safe defaults
+4. **Work in worktrees** -- all changes in `ws/glm47_flash/`, never in main `docker_tt/`
+5. **Record everything** -- benchmark results go to `plan/glm47_flash/perf-opt.md`
+
+### Quick Launch
+
+```python
+TeamCreate(team_name="glm-perf-sprint", description="GLM-4.7-Flash 6->30 tok/s optimization")
+# Then spawn agents per plan/glm47_flash/claude_team_glm47_plan.md
+```
+
 ## Upstream Repositories
 
 - tt-metal: https://github.com/tenstorrent/tt-metal (branch: main)
