@@ -15,7 +15,25 @@ else
 fi
 
 # Defaults
-WORKSPACE_BASE="${WORKSPACE_BASE:-$(dirname "$DOCKER_TT_DIR")}"
+#
+# WORKSPACE_BASE wants to be the directory that contains:
+# - docker_tt.git / tt-metal.git / vllm.git (bare repos)
+# - ws/ (worktrees)
+#
+# Historically docker_tt lived at "$WORKSPACE_BASE/docker_tt". With worktrees,
+# docker_tt can also live at "$WORKSPACE_BASE/ws/<name>/docker_tt". Make the
+# default robust so running this script from inside a worktree still "does the
+# right thing" and targets the shared bare repos.
+if [ -z "${WORKSPACE_BASE:-}" ]; then
+    case "$DOCKER_TT_DIR" in
+        */ws/*/docker_tt)
+            WORKSPACE_BASE="${DOCKER_TT_DIR%%/ws/*}"
+            ;;
+        *)
+            WORKSPACE_BASE="$(dirname "$DOCKER_TT_DIR")"
+            ;;
+    esac
+fi
 TT_METAL_DEFAULT_BRANCH="${TT_METAL_DEFAULT_BRANCH:-main}"
 VLLM_DEFAULT_BRANCH="${VLLM_DEFAULT_BRANCH:-dev}"
 

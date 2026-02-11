@@ -3,7 +3,9 @@
 FROM ubuntu:22.04 AS base
 
 # Build args
+ARG TT_METAL_REPO=https://github.com/tenstorrent/tt-metal.git
 ARG TT_METAL_REF=main
+ARG VLLM_REPO=https://github.com/tenstorrent/vllm.git
 ARG VLLM_REF=dev
 ARG DEBIAN_FRONTEND=noninteractive
 ARG BUILD_JOBS=16
@@ -32,7 +34,7 @@ ENV PATH="/root/.local/bin:$PATH"
 # Clone tt-metal (shallow clone for speed)
 WORKDIR /
 RUN git config --global http.postBuffer 524288000 \
-    && git clone --depth 1 -b ${TT_METAL_REF} https://github.com/tenstorrent/tt-metal.git \
+    && git clone --depth 1 -b ${TT_METAL_REF} ${TT_METAL_REPO} \
     && cd tt-metal \
     && git submodule update --init --recursive --depth 1
 
@@ -51,7 +53,7 @@ RUN ./create_venv.sh --env-dir /opt/venv
 
 # Clone vLLM
 WORKDIR /
-RUN git clone --depth 1 -b ${VLLM_REF} https://github.com/tenstorrent/vllm.git
+RUN git clone --depth 1 -b ${VLLM_REF} ${VLLM_REPO}
 
 # Install vLLM for TT target
 WORKDIR /vllm
