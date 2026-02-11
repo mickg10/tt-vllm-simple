@@ -167,15 +167,45 @@ cmd_create() {
         git -C "$VLLM_BARE" worktree add "$ws_dir/vllm" "$vllm_branch" 2>/dev/null || \
             git -C "$VLLM_BARE" worktree add "$ws_dir/vllm" -b "$vllm_branch" "origin/$vllm_branch"
     else
-        # Feature workspace: create new branches with the workspace name
-        log "  Creating docker_tt worktree (new branch: $name)..."
-        git -C "$DOCKER_TT_BARE" worktree add -b "$name" "$ws_dir/docker_tt" main
+        # Feature workspace: check if remote branches exist, otherwise create new ones.
+        # Fetch first so we see any recently-pushed branches.
+        log "  Fetching latest refs..."
+        git -C "$DOCKER_TT_BARE" fetch origin --prune 2>/dev/null || true
+        git -C "$TT_METAL_BARE" fetch origin --prune 2>/dev/null || true
+        git -C "$VLLM_BARE" fetch origin --prune 2>/dev/null || true
 
-        log "  Creating tt-metal worktree (new branch: $name)..."
-        git -C "$TT_METAL_BARE" worktree add -b "$name" "$ws_dir/tt-metal" "origin/$tt_metal_branch"
+        # docker_tt: check for origin/<name>, fall back to new branch from main
+        if git -C "$DOCKER_TT_BARE" rev-parse --verify "origin/$name" &>/dev/null; then
+            log "  Creating docker_tt worktree (existing remote branch: $name)..."
+            git -C "$DOCKER_TT_BARE" worktree add "$ws_dir/docker_tt" "$name" 2>/dev/null || \
+                git -C "$DOCKER_TT_BARE" worktree add "$ws_dir/docker_tt" -b "$name" "origin/$name"
+            git -C "$ws_dir/docker_tt" branch --set-upstream-to="origin/$name" "$name" 2>/dev/null || true
+        else
+            log "  Creating docker_tt worktree (new branch: $name from main)..."
+            git -C "$DOCKER_TT_BARE" worktree add -b "$name" "$ws_dir/docker_tt" main
+        fi
 
-        log "  Creating vllm worktree (new branch: $name)..."
-        git -C "$VLLM_BARE" worktree add -b "$name" "$ws_dir/vllm" "origin/$vllm_branch"
+        # tt-metal: check for origin/<name>, fall back to new branch from default
+        if git -C "$TT_METAL_BARE" rev-parse --verify "origin/$name" &>/dev/null; then
+            log "  Creating tt-metal worktree (existing remote branch: $name)..."
+            git -C "$TT_METAL_BARE" worktree add "$ws_dir/tt-metal" "$name" 2>/dev/null || \
+                git -C "$TT_METAL_BARE" worktree add "$ws_dir/tt-metal" -b "$name" "origin/$name"
+            git -C "$ws_dir/tt-metal" branch --set-upstream-to="origin/$name" "$name" 2>/dev/null || true
+        else
+            log "  Creating tt-metal worktree (new branch: $name from origin/$tt_metal_branch)..."
+            git -C "$TT_METAL_BARE" worktree add -b "$name" "$ws_dir/tt-metal" "origin/$tt_metal_branch"
+        fi
+
+        # vllm: check for origin/<name>, fall back to new branch from default
+        if git -C "$VLLM_BARE" rev-parse --verify "origin/$name" &>/dev/null; then
+            log "  Creating vllm worktree (existing remote branch: $name)..."
+            git -C "$VLLM_BARE" worktree add "$ws_dir/vllm" "$name" 2>/dev/null || \
+                git -C "$VLLM_BARE" worktree add "$ws_dir/vllm" -b "$name" "origin/$name"
+            git -C "$ws_dir/vllm" branch --set-upstream-to="origin/$name" "$name" 2>/dev/null || true
+        else
+            log "  Creating vllm worktree (new branch: $name from origin/$vllm_branch)..."
+            git -C "$VLLM_BARE" worktree add -b "$name" "$ws_dir/vllm" "origin/$vllm_branch"
+        fi
     fi
 
     log ""

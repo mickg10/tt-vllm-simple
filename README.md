@@ -166,15 +166,12 @@ make stop-dev
 
 To resume GLM-4.7-Flash work:
 ```bash
-# Set up workspace (if not already done)
+# Fetch + create workspace from existing remote branches
+# (workspace-create auto-detects remote branches after fetching)
 make workspace-create NAME=glm47_flash
 
-# Or if workspace exists, switch to the branch
-cd ws/glm47_flash/docker_tt
-git checkout glm47_flash
-
 # See the worklog for current status and run commands
-cat WORKLOG_GLM47_FLASH.md
+cat ws/glm47_flash/docker_tt/WORKLOG_GLM47_FLASH.md
 ```
 
 ## Supported Models
