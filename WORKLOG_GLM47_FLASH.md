@@ -3,20 +3,46 @@
 This file is a lightweight, in-repo pointer and snapshot for the `glm47_flash` effort.
 The canonical planning/docs live outside git under `/home/ttuser/src_docker/plan/glm47_flash/`.
 
+## Standard Dev Run
+
+```bash
+cd /home/ttuser/src_docker/ws/glm47_flash/docker_tt
+docker compose --env-file dev/.env.glm47 -f dev/docker-compose.yml \
+  up -d --force-recreate vllm-tt
+```
+
+This is the **primary path** for GLM-4.7-Flash development. It uses the perf-trace-tp
+config (tracing enabled, TP sharding, bf8 KV cache) which produces ~6 tok/s with coherent output.
+
+**Correctness variant** (slower, ~3 tok/s, higher fidelity math):
+```bash
+docker compose --env-file dev/.env.glm47.correctness -f dev/docker-compose.yml \
+  up -d --force-recreate vllm-tt
+```
+
 ## Current Bring-Up Status (2026-02-11)
-- TT endpoint: `http://localhost:8088/v1` (OpenAI-style)
-- Open WebUI: `http://localhost:3000`
-- TT monitor: `http://localhost:9090`
-- Reference endpoint: `http://localhost:8087/v1` (full model: `zai-org/GLM-4.7-Flash`)
 
-Correctness:
-- Manual chat sanity: PASS (coherent English).
-- Determinism at `temperature=0`: PASS (5 repeats; identical output).
-- No KV-boundary corruption at `pos >= 64` (`--block-size=64`): PASS.
+| Endpoint | URL | Description |
+|----------|-----|-------------|
+| TT vLLM | `http://localhost:8088/v1` | OpenAI-compatible API |
+| Open WebUI | `http://localhost:3000` | Chat interface |
+| TT Monitor | `http://localhost:9090` | Device monitoring |
+| GPU Reference | `http://localhost:8087/v1` | Full model on NVIDIA GPU |
 
-Perf snapshot (short prompts, end-to-end):
-- Reference `:8087`: ~19 tok/s
-- TT `:8088`: ~3 tok/s
+### Correctness
+- Manual chat sanity: **PASS** (coherent English)
+- Determinism at `temperature=0`: **PASS** (5 repeats; identical output)
+- No KV-boundary corruption at `pos >= 64` (`--block-size=64`): **PASS**
+
+### Performance (short prompts, end-to-end)
+- Reference `:8087` (GPU): **~19 tok/s**
+- TT `:8088` (perf-trace-tp): **~6 tok/s**
+- TT `:8088` (correctness): **~3 tok/s**
+
+### Next Steps
+- Target: 30 tok/s decode
+- Root cause of gap: replicated bring-up (no multi-chip TP sharding beyond dense layers),
+  single-chip MoE latency, prefill still uses decode-loop path
 
 ## Root Cause Fixed: KV-Boundary Gibberish
 Symptom:
@@ -33,12 +59,11 @@ Fix:
 - `tt-metal`: `3b63e3cc34` (FlashMLA fp32 dest acc safety gate)
 - `vllm`: `b2fbf06a6` (optional page_table boundary logging)
 
-## Dev Bring-Up (Worktree)
-- GLM:
-  - `cd /home/ttuser/src_docker/ws/glm47_flash/docker_tt`
-  - `docker compose --env-file dev/.env.glm47 -f dev/docker-compose.yml up -d --force-recreate vllm-tt`
-- Qwen32B regression gate:
-  - `docker compose --env-file dev/.env.qwen32b -f dev/docker-compose.yml up -d --force-recreate vllm-tt`
+## Qwen32B Regression Gate
+```bash
+docker compose --env-file dev/.env.qwen32b -f dev/docker-compose.yml \
+  up -d --force-recreate vllm-tt
+```
 
 ## From-Source Bring-Up (Reproduce Current Code)
 The `from_source/` variant now supports overriding repo URLs/refs via build args:
