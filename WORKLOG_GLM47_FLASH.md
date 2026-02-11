@@ -29,7 +29,7 @@ Fix:
 - `tt-metal` forces FlashMLA `fp32_dest_acc_en=False` unless explicitly enabled via an unsafe escape hatch.
 
 ## Key SHAs (Worktrees)
-- `docker_tt`: `38e6035` (from_source fork repo override + worktree-safe workspace base)
+- `docker_tt`: `cfe8358` (worklog pointer + from_source fork repo override + worktree-safe workspace base)
 - `tt-metal`: `3b63e3cc34` (FlashMLA fp32 dest acc safety gate)
 - `vllm`: `b2fbf06a6` (optional page_table boundary logging)
 
