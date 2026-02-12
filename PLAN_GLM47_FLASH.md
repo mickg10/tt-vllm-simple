@@ -581,7 +581,30 @@ The gap from ~6 tok/s to target 30 tok/s is structural:
 4. **No prefix caching** — repeated-prefix workloads pay full prefill every time
 5. **Single-sequence batch** — `MAX_NUM_SEQS=1` for stability during bring-up
 
-### 6.4 Negative Experiments (Rejected from Baseline)
+### 6.4 Ralph Loop Benchmark History (2026-02-12 onwards)
+
+> **Rule:** Update this table after every optimization attempt.
+
+| # | Date | Approach | bs=1 tok/s | bs=32 agg tok/s | ITL (ms) | TTFT bs=1 | Coherency | Verdict |
+|---|------|----------|-----------|----------------|----------|-----------|-----------|---------|
+| 0 | Feb 6 | Early bring-up (no TP, no trace) | 2.4 | -- | ~400 | ~1.2s | -- | Starting point |
+| 1 | Feb 8 | + TP sharding + trace_mode=decode_only | 2.8 | -- | ~357 | ~1.3s | -- | +15% from TP |
+| 2 | Feb 11 | + fused QKV_A, sparse MoE, LoFi, bf8 KV | **4.5** | **27.8** | 223 | 2.4s | 30/32 | **Current baseline** |
+| 3 | Feb 12 | + L1_WIDTH_SHARDED sentinel on MLP outputs | 4.5 | -- | 222.9 | -- | 30/32 | Zero improvement (sentinel only) |
+| 4 | Feb 12 | + DRAM-sharded attn weights (Phase 1) | 3.5 | **38.0** | ~285 | -- | 30/32 | bs=32 best (+37%), bs=1 REGRESSED (-22%) |
+| 5 | Feb 12 | + DRAM-sharded MLP weights | 4.2 | -- | ~238 | -- | -- | bs=1 regression, abandoned |
+| 6 | Feb 12 | + EXPLICIT_PROG_CFG=1 (1D matmul program) | 3.2 | 5.1 | 176 (bs=32) | 5.3s / 103s (bs=32) | 31/32 | Best ITL but per-request recompile overhead, abandoned |
+| 7 | Feb 12 | + in0_block_w=8 (MoE) + clone audit Phase 1 | **5.6** | **59.1** | 179 / 173 (bs=32) | 6.2s / 91s (bs=32) | 30/32 | **NEW BEST: bs=1 +24%, bs=32 +113%** |
+| 8 | Feb 12 | Diagnostic: MESH_DEVICE=N300 (2 chips) | -- | -- | -- | -- | -- | OOM at layer 19/47 — model needs all 8 chips |
+| 9 | Feb 12 | + SHARDED_MLP=1 (DRAM-sharded shared MLP) | 5.6 | 59.5 | 179 / 174 (bs=32) | 6.3s / 92s (bs=32) | 30/32 | Zero improvement — shared MLP not the bottleneck |
+
+**Records:**
+- Best bs=1 per-user: **5.6 tok/s** (#7, in0_block_w=8 + clone audit)
+- Best bs=32 aggregate: **59.1 tok/s** (#7, in0_block_w=8 + clone audit)
+- Best per-token ITL: **173ms** (#7, bs=32)
+- **Target: 30 tok/s bs=1 / 140+ tok/s bs=32**
+
+### 6.5 Negative Experiments (Rejected from Baseline)
 
 | Experiment | Throughput | Issue | Verdict |
 |------------|-----------|-------|---------|
