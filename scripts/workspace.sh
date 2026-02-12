@@ -201,15 +201,30 @@ cmd_create() {
         git -C "$VLLM_BARE" worktree add "$ws_dir/vllm" "$vllm_branch" 2>/dev/null || \
             git -C "$VLLM_BARE" worktree add "$ws_dir/vllm" -b "$vllm_branch" "origin/$vllm_branch"
     else
-        # Feature workspace: create new branches with the workspace name
-        log "  Creating docker_tt worktree (new branch: $name)..."
-        git -C "$DOCKER_TT_BARE" worktree add -b "$name" "$ws_dir/docker_tt" main
+        # Feature workspace: fetch origin first, then use existing remote
+        # branch if it exists, otherwise create a new branch from defaults.
+        log "  Fetching latest refs from origin..."
+        git -C "$DOCKER_TT_BARE" fetch origin --prune 2>/dev/null || true
+        git -C "$TT_METAL_BARE" fetch origin --prune 2>/dev/null || true
+        git -C "$VLLM_BARE" fetch origin --prune 2>/dev/null || true
 
-        log "  Creating tt-metal worktree (new branch: $name)..."
-        git -C "$TT_METAL_BARE" worktree add -b "$name" "$ws_dir/tt-metal" "origin/$tt_metal_branch"
+        # docker_tt: try existing branch, then existing remote, then new from main
+        log "  Creating docker_tt worktree (branch: $name)..."
+        git -C "$DOCKER_TT_BARE" worktree add "$ws_dir/docker_tt" "$name" 2>/dev/null || \
+            git -C "$DOCKER_TT_BARE" worktree add "$ws_dir/docker_tt" -b "$name" "origin/$name" 2>/dev/null || \
+            git -C "$DOCKER_TT_BARE" worktree add "$ws_dir/docker_tt" -b "$name" main
 
-        log "  Creating vllm worktree (new branch: $name)..."
-        git -C "$VLLM_BARE" worktree add -b "$name" "$ws_dir/vllm" "origin/$vllm_branch"
+        # tt-metal: try existing branch, then existing remote, then new from default
+        log "  Creating tt-metal worktree (branch: $name)..."
+        git -C "$TT_METAL_BARE" worktree add "$ws_dir/tt-metal" "$name" 2>/dev/null || \
+            git -C "$TT_METAL_BARE" worktree add "$ws_dir/tt-metal" -b "$name" "origin/$name" 2>/dev/null || \
+            git -C "$TT_METAL_BARE" worktree add "$ws_dir/tt-metal" -b "$name" "origin/$tt_metal_branch"
+
+        # vllm: try existing branch, then existing remote, then new from default
+        log "  Creating vllm worktree (branch: $name)..."
+        git -C "$VLLM_BARE" worktree add "$ws_dir/vllm" "$name" 2>/dev/null || \
+            git -C "$VLLM_BARE" worktree add "$ws_dir/vllm" -b "$name" "origin/$name" 2>/dev/null || \
+            git -C "$VLLM_BARE" worktree add "$ws_dir/vllm" -b "$name" "origin/$vllm_branch"
     fi
 
     log ""
