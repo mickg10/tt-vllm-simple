@@ -278,24 +278,60 @@ and iteration logs live outside git in `/home/ttuser/src_docker/plan/<model_name
 For multi-agent performance sprints, use Claude Code's team infrastructure
 (`TeamCreate`, `TaskCreate`, `SendMessage`).
 
-### Team Plan
+### Team Structure
 
-Full plan: `/home/ttuser/src_docker/plan/glm47_flash/claude_team_glm47_plan.md`
-Quick ref: `AGENTS.md` in this directory.
+Full doc: `/home/ttuser/src_docker/plan/glm47_flash/team-structure.md`
+
+Three roles only:
+
+| Role | Agent Name | What It Does | What It NEVER Does |
+|------|-----------|-------------|-------------------|
+| **Team Lead** | `team-lead` | Delegates, coordinates, evaluates results | Edit files, run docker, run benchmarks |
+| **Architect** | `architect` | Research via Codex, design optimizations | Edit files, run docker, run benchmarks |
+| **Implementer** | `implementer` | Edit code, restart containers, benchmark | Design optimizations, make architectural decisions |
+
+### CRITICAL: Team Lead Delegation Rule
+
+The team lead **MUST NOT** directly:
+- Edit any file (`Edit`, `Write` tools)
+- Run docker commands (`docker compose`, `docker restart`)
+- Run benchmarks (`python tests/bench_decode.py`)
+- Modify env files, compose files, or model code
+
+The team lead **ONLY**:
+- Creates teams and tasks
+- Sends instructions to architect/implementer via `SendMessage`
+- Reads files and results to understand state
+- Updates `perf-opt.md` with findings (the ONE write exception)
+
+**If you are the team lead and about to edit a file or run docker: STOP.
+Send the instruction to the implementer instead.**
 
 ### Key Rules
 
-1. **Always consult Codex** (`mcp__codex-cli__codex`) at every architectural decision
-2. **Never break Qwen-32B** -- run regression gate after every change
+1. **ONE implementer at a time** -- never spawn two (they corrupt code/containers)
+2. **Always consult Codex** (`mcp__codex-cli__codex` with model="gpt-5.2") at every architectural decision
 3. **Feature-flag everything** -- new optimizations behind env vars with safe defaults
 4. **Work in worktrees** -- all changes in `ws/glm47_flash/`, never in main `docker_tt/`
 5. **Record everything** -- benchmark results go to `plan/glm47_flash/perf-opt.md`
+6. **Architect is long-lived** (keeps context), implementer is ephemeral (per-task)
+
+### The Loop
+
+```
+Team Lead ──(design request)──> Architect
+Architect ──(analysis)────────> Team Lead
+Team Lead ──(task)────────────> Implementer
+Implementer ──(results)───────> Team Lead
+Team Lead ──(results)─────────> Architect
+(repeat)
+```
 
 ### Quick Launch
 
 ```python
-TeamCreate(team_name="glm-perf-sprint", description="GLM-4.7-Flash 6->30 tok/s optimization")
-# Then spawn agents per plan/glm47_flash/claude_team_glm47_plan.md
+TeamCreate(team_name="glm-perf-sprint-N", description="GLM-4.7-Flash perf optimization")
+# See plan/glm47_flash/team-structure.md for prompt templates and full details
 ```
 
 ## Upstream Repositories
