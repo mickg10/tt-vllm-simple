@@ -597,6 +597,10 @@ The gap from ~6 tok/s to target 30 tok/s is structural:
 | 7 | Feb 12 | + in0_block_w=8 (MoE) + clone audit Phase 1 | **5.6** | **59.1** | 179 / 173 (bs=32) | 6.2s / 91s (bs=32) | 30/32 | **NEW BEST: bs=1 +24%, bs=32 +113%** |
 | 8 | Feb 12 | Diagnostic: MESH_DEVICE=N300 (2 chips) | -- | -- | -- | -- | -- | OOM at layer 19/47 — model needs all 8 chips |
 | 9 | Feb 12 | + SHARDED_MLP=1 (DRAM-sharded shared MLP) | 5.6 | 59.5 | 179 / 174 (bs=32) | 6.3s / 92s (bs=32) | 30/32 | Zero improvement — shared MLP not the bottleneck |
+| 10 | Feb 12 | Clone audit Phase 2 (21 clones/layer removed) | 5.6 | 58.9 | 177 / 173 (bs=32) | ~6s / ~91s (bs=32) | 30/32 | Performance neutral — clones not on critical traced path |
+| 11 | Feb 12 | Collective reduction: ATTN_DP + fused MLP/MoE reduce (234 all_reduces removed) | 5.6 | 59.5 | 179 / 173 (bs=32) | 6.6s / 91s (bs=32) | 30/32 | Performance neutral — collectives NOT the bottleneck |
+| 12 | Feb 13 | Diagnostic: DRAM-sharded vs interleaved matmul bandwidth | -- | -- | -- | -- | -- | NO improvement — GLM dimensions too small for DRAM sharding benefit. Large weights already at 55-57% BW. Small weights overhead-dominated. |
+| 13 | Feb 13 | Diagnostic: MAX_NUM_SEQS=1 (eliminate batch padding) | 6.2 | -- | 162 | 7.6s | -- | -9.5% ITL (179->162ms). Batch padding = ~17ms. Remaining 162ms is actual model compute. |
 
 **Records:**
 - Best bs=1 per-user: **5.6 tok/s** (#7, in0_block_w=8 + clone audit)
