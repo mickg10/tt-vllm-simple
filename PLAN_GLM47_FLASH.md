@@ -112,7 +112,7 @@ docker compose --env-file dev/.env.glm47 -f dev/docker-compose.yml \
 ```
 
 Two env configurations:
-- `dev/.env.glm47` — perf-trace-tp config (~6 tok/s, coherent, tracing + TP enabled)
+- `dev/.env.glm47` — perf config (~7 tok/s bs=1, ~208 tok/s agg bs=32, batch-bucketed traces + sparse decode)
 - `dev/.env.glm47.correctness` — correctness-first (~3 tok/s, hifi4 math, no tracing)
 
 ### 2.3 Reference Endpoint
@@ -241,11 +241,17 @@ Tasks:
 - [x] Enable decode tracing (`trace_mode=decode_only`)
 - [x] Add thinking-disable chat template (UX improvement)
 - [x] Add tool-call parser support (`glm47`)
+- [x] Native FlashMLA prefill (`flash_mla_prefill`)
+- [x] Increase MAX_NUM_SEQS to 32 (batched inference)
+- [x] EP_L1 + fused gate_up experts (+66% decode)
+- [x] sample_on_device_mode=decode_only (+13.8x prefill)
+- [x] Batch-bucketed decode traces (B=1,4,8,16,32 → +60% bs=1 decode)
+- [x] Section 115 fix: sparse MoE for decode (+61% bs=32 aggregate)
 - [ ] Full TP sharding for MoE experts (not just dense path)
 - [ ] Move decode hot tensors to L1/sharded memory
 - [ ] Enable prefix caching for GLM
-- [ ] Native FlashMLA prefill (currently using decode-loop fallback)
 - [ ] 8-bit checkpoint ingestion
+- [ ] Speculative decode / MTP (required for 30 tok/s bs=1)
 - [ ] OpenCode coding suite gate (blocked on task completion quality)
 
 ---
@@ -459,6 +465,40 @@ Team structure:
 
 Process: implement → restart → verify coherency → benchmark → commit + push
 
+### 2026-02-13: Ralph Loop Sprint 2 — Env Regression Fix + DENSE_PREFILL Discovery
+
+**Env regression bisection:**
+- Discovered EP_L1=1 + FUSE_EXPERTS_GATE_UP=1 were accidentally disabled (were ON in earlier builds)
+- Restoring them: 3.9→6.83 tok/s (+66% decode), 146ms ITL
+- Added sample_on_device_mode=decode_only (+13.8x prefill, +5% decode)
+- SKIP_DEFENSIVE_CLONES=1: +83% prefill speed
+
+**DENSE_PREFILL=0 breakthrough:**
+- Setting MOE_DENSE_PREFILL=0 → +47% decode bs=1 (6.39 tok/s), +61% decode bs=32 (207.4 tok/s agg)
+- Root cause: `use_dense_prefill = tokens > 1` applies to ALL forward calls, including decode
+  at MAX_NUM_SEQS=32 (tokens=32). Dense MoE does 16x more compute than sparse for decode.
+- Prefill hangs with sparse MoE at 1k+ context (sparse_matmul not optimized for multi-token)
+
+**Negative experiments (rejected):**
+- Fused SiLU*mul: -13% regression
+- k_chunk_size=128: 0% improvement
+- FUSE_MLP_MOE_REDUCE: broken (bug found — ignores skip_final_reduce at tokens>1)
+
+### 2026-02-14: Ralph Loop Sprint 3 — Batch-Bucketed Traces + Section 115
+
+**Batch-bucketed traces (Task #19):**
+- Capture decode traces at B=1,4,8,16,32 buckets
+- At runtime, pad to nearest bucket instead of MAX_NUM_SEQS
+- B=1 requests get 16 FlashMLA cores (was 2 with B=32 trace)
+- Result: bs=1 decode 4.34→6.93 tok/s (+60%)
+- Design: `docs/batch-bucketed-traces.md`
+
+**Section 115 fix (Task #22):**
+- One-line change: `tokens > 1` → `tokens >= 33` at decoder_layer_tt.py:1174
+- Decode (tokens≤32) uses sparse MoE (fast), prefill (tokens≥33) uses dense MoE (stable)
+- Combined result: **7.0 tok/s bs=1, 208.3 tok/s bs=32 aggregate, 205 tok/s prefill 1k**
+- **bs=32 aggregate target of 150 tok/s EXCEEDED**
+
 ---
 
 ## 5. Bugs Found and Fixed
@@ -548,10 +588,14 @@ trace inputs and KV cache updates.
 | Feb 9 | + TT router | 14.4 | 13.6 | On-device routing (peak) |
 | Feb 10 | + Blocking trace fix | 6.4 | 5.3 | Correctness fix reduced peak |
 | Feb 10 | + packer_l1_acc | 13.4 | 13.4 | L1 accumulation enabled |
-| **Feb 11** | **Current best (perf-trace-tp)** | **~6.4** | **~5.3** | **Stable, coherent config** |
+| Feb 11 | Current best (perf-trace-tp) | ~6.4 | ~5.3 | Stable, coherent config |
+| Feb 13 | + EP_L1, fused gate_up, sample_on_device | ~6.8 | ~5.7 | +66% from env fix |
+| Feb 13 | + SKIP_DEFENSIVE_CLONES | ~6.8 | ~5.7 | +83% prefill |
+| **Feb 14** | **+ Batch-bucketed traces + Section 115 fix** | **~7.0** | **208 agg bs=32** | **bs=32 target HIT** |
 
 Note: Some iterations showed ~14 tok/s decode but with unreliable TTFT measurement
-(streaming content issue). The **stable, measured, coherent** config is ~6 tok/s decode.
+(streaming content issue). The Feb 14 result combines two optimizations:
+batch-bucketed traces (B=1 gets 16 FlashMLA cores) + Section 115 fix (sparse MoE for decode).
 
 ### 6.2 Decode Stage Profile (Current)
 
@@ -601,12 +645,19 @@ The gap from ~6 tok/s to target 30 tok/s is structural:
 | 11 | Feb 12 | Collective reduction: ATTN_DP + fused MLP/MoE reduce (234 all_reduces removed) | 5.6 | 59.5 | 179 / 173 (bs=32) | 6.6s / 91s (bs=32) | 30/32 | Performance neutral — collectives NOT the bottleneck |
 | 12 | Feb 13 | Diagnostic: DRAM-sharded vs interleaved matmul bandwidth | -- | -- | -- | -- | -- | NO improvement — GLM dimensions too small for DRAM sharding benefit. Large weights already at 55-57% BW. Small weights overhead-dominated. |
 | 13 | Feb 13 | Diagnostic: MAX_NUM_SEQS=1 (eliminate batch padding) | 6.2 | -- | 162 | 7.6s | -- | -9.5% ITL (179->162ms). Batch padding = ~17ms. Remaining 162ms is actual model compute. |
+| 14 | Feb 13 | EP_L1=1 + FUSE_EXPERTS_GATE_UP=1 restoration | 6.83 | ~198 | 146 | -- | PASS | **+66% decode from env fix** |
+| 15 | Feb 13 | sample_on_device_mode=decode_only | ~6.8 | ~198 | ~147 | -- | PASS | +13.8x prefill, +5% decode |
+| 16 | Feb 13 | SKIP_DEFENSIVE_CLONES=1 | ~6.8 | ~198 | ~147 | -- | PASS | +83% prefill speed |
+| 17 | Feb 13 | MOE_DENSE_PREFILL=0 (decode only) | 6.39 | 207.4 | 156/145 | -- | PASS | **+47% bs=1, +61% bs=32** but prefill HANGS |
+| 18 | Feb 14 | Batch-bucketed traces (B=1,4,8,16,32) | 6.93 | 134.7 | 143.6 | 2.2s | PASS | **+60% bs=1** (more FlashMLA cores) |
+| **19** | **Feb 14** | **+ Section 115 fix (sparse MoE for decode)** | **6.97** | **208.3** | **143.1** | **3.6s** | **PASS** | **bs=32 TARGET HIT (>150)** |
 
 **Records:**
-- Best bs=1 per-user: **5.6 tok/s** (#7, in0_block_w=8 + clone audit)
-- Best bs=32 aggregate: **59.1 tok/s** (#7, in0_block_w=8 + clone audit)
-- Best per-token ITL: **173ms** (#7, bs=32)
-- **Target: 30 tok/s bs=1 / 140+ tok/s bs=32**
+- Best bs=1 per-user: **6.97 tok/s** (#19, bucketed traces + Section 115)
+- Best bs=32 aggregate: **208.3 tok/s** (#19, bucketed traces + Section 115) — **TARGET >150 EXCEEDED**
+- Best per-token ITL: **143.1ms** (#19, bs=1)
+- Best prefill 1k: **205 tok/s** (#19, 4.88s TTFT)
+- **Target: 30 tok/s bs=1 (needs MTP) / 150 tok/s bs=32 ✅ ACHIEVED**
 
 ### 6.5 Negative Experiments (Rejected from Baseline)
 
@@ -635,31 +686,33 @@ The gap from ~6 tok/s to target 30 tok/s is structural:
 | Endpoint | Decode TPS | E2E TPS | TTFT |
 |----------|-----------|---------|------|
 | GPU reference (:8087) | ~47 | ~42 | ~0.6s |
-| TT perf-trace-tp (:8088) | ~4.5/user | ~28.5 agg (bs=8) | ~2.4s (short) |
+| TT perf-trace-tp (:8088) | ~7.0/user bs=1 | ~208 agg bs=32 | ~3.6s (short) |
 | TT correctness (:8088) | ~2.7 | ~2.4 | ~39s |
 | Qwen32B TT (:8088) | ~18.9 | ~18.8 | ~0.2s |
 
-**Latest benchmark (1k ctx, 500 gen, 2026-02-12):**
-- Per-user decode: 4.5 tok/s (223ms ITL) — constant across batch sizes 1-8
-- Aggregate scales linearly: 4.5 (bs=1), 14.6 (bs=4), 28.5 (bs=8)
-- TTFT: 2.4s (short prompts) to 59s (1k tokens, includes trace re-capture)
+**Latest benchmark (2026-02-14, batch-bucketed traces + Section 115 fix):**
 
-**Post DRAM-sharded Phase 1 (attention linears only, 2026-02-12):**
-- bs=1: 3.5 tok/s decode (227ms ITL, 8.6s TTFB) — slight regression, overhead of activation resharding
-- bs=4: 14.1 agg tok/s (4.1 per-user, 226.8ms ITL) — comparable to baseline
-- **bs=32: 38.0 agg tok/s** (4.0 per-user, 198ms ITL, 421s wall) — **+37% from 27.8 baseline**
-- Decode loop at bs=32: 311s vs 468s baseline (-34% reduction)
-- Coherency: 30/32 PASS (no regression)
-- Phase 2 (MLP + MoE) expected to improve per-user latency further
+| Metric | bs=1 | bs=32 |
+|--------|------|-------|
+| Decode tok/s (per-user) | **7.0** | 6.5 |
+| Decode tok/s (aggregate) | 7.0 | **208.3** |
+| Decode ITL | 143ms | 145ms |
+| Prefill 1k tok/s | 205 | 23.5 |
+| Prefill 1k TTFT | 4.9s | 42.6s |
+
+**Target status:** bs=32 aggregate >150 tok/s **ACHIEVED** (208.3). bs=1 decode 30 tok/s
+requires speculative decode / MTP (143ms ITL is at kernel floor).
 
 ### 7.3 Environment Configurations
 
 **Perf-trace-tp** (`dev/.env.glm47`) — the primary config:
-- `trace_mode=decode_only`, `trace_region_size=40MB`
+- `trace_mode=decode_only`, `trace_region_size=250MB` (5 bucket traces)
+- `decode_trace_batch_buckets=[1,4,8,16,32]`
 - `enable_model_warmup=true`, `sample_on_device_mode=decode_only`
 - TP=1, fused QKV-A=1, V-cache-slice=1
-- Sparse experts: hifi2, no fp32 acc, approx=1
-- MLA: hifi2, approx=1
+- EP_L1=1, FUSE_EXPERTS_GATE_UP=1, SKIP_DEFENSIVE_CLONES=1
+- Sparse experts: lofi, no fp32 acc, approx=1
+- MLA: lofi, approx=1
 - Dense weights: BF16, Expert weights: BF8, KV cache: BF8
 
 **Correctness** (`dev/.env.glm47.correctness`) — for debugging:
@@ -673,9 +726,9 @@ The gap from ~6 tok/s to target 30 tok/s is structural:
 
 | Repo | SHA | Description |
 |------|-----|-------------|
-| `docker_tt` | `0255626` | WORKLOG update, env consolidation |
-| `tt-metal` | `3b63e3cc34` | FlashMLA fp32 dest acc safety gate |
-| `vllm` | `b2fbf06a6` | Optional page_table boundary logging |
+| `docker_tt` | `310537a` | Batch-bucketed traces env + docs update |
+| `tt-metal` | `465e73d467` | Batch-bucketed traces + Section 115 fix |
+| `vllm` | `53e7e0f8a` | Batch-bucketed decode traces in runner |
 
 ---
 
@@ -683,40 +736,36 @@ The gap from ~6 tok/s to target 30 tok/s is structural:
 
 ### 8.1 Performance Roadmap (Prioritized)
 
-**P-1: Fix streaming content for TTFT measurement**
-- GLM TT sometimes returns empty `delta.content` on long generations
-- Blocks reliable TTFT benchmarking
+**bs=32 aggregate target ACHIEVED** (208.3 tok/s vs 150 target). Remaining gap is bs=1 decode
+(7.0 tok/s vs 30 target) and prefill (205 tok/s vs 1000 target).
 
-**P0: True TP sharding for MoE experts** (required for 30 tok/s)
-- Currently MoE experts run replicated — single-chip latency bottleneck
-- Implement expert parallelism across the 1x8 mesh
-- Expected: large multi-x latency reduction
+**P0: Speculative decode / MTP** (required for 30 tok/s bs=1)
+- 143ms ITL is at the per-kernel floor (~157ms estimated for 9 matmuls × 47 layers)
+- Cannot be achieved by kernel optimization alone
+- Need multi-token prediction (MTP) or speculative decoding to produce >1 token per step
+- GLM-4.7-Flash checkpoint includes MTP layers (layer 47, currently ignored)
 
-**P1: Fuse remaining Q/KV projections**
-- Complete the DeepSeek-style fused MLA weight approach
-- Target `q_path` and `kv_cache_update` stage costs
+**P1: Prefill pipeline parallelism** (required for 1000 tok/s prefill)
+- Current 205 tok/s is sequential layer execution
+- Pipeline parallelism across T3K mesh could provide multi-x improvement
 
-**P2: L1/sharded memory for decode hot tensors**
+**P2: True TP sharding for MoE experts**
+- Currently MoE experts run replicated — expert parallelism could reduce per-layer latency
+- Would help both decode ITL and prefill throughput
+
+**P3: L1/sharded memory for decode hot tensors**
 - Move frequently-accessed tensors from DRAM to L1
-- Enable fast kernel configs (`LoFi`, `packer_l1_acc`) where quality allows
+- Previous experiments showed mixed results (DRAM-sharded helped bs=32 but hurt bs=1)
 
-**P3: MoE router + expert tuning for tiny decode batches**
-- Sparse program config tuning
-- Avoid row-major/tile layout churn
-
-**P4: Deeper quantization (BF4 for MoE weights)**
-- Only if still below target after P0-P3
-- Must pass BF16-quality gates
-
-**P5: Long benchmark matrix**
-- Only after short-loop trending upward
-- Run `repeat10`, `linear10`, `prefix5` suites
+**P4: Long benchmark matrix**
+- Run full matrix: (1k/500, 10k/1000, 29k/3000 ctx/gen) × (batch=1,4,8,32)
+- Validate performance at longer contexts
 
 ### 8.2 Functional Roadmap
 
-- [ ] Native FlashMLA prefill (replace decode-loop fallback)
+- [x] Native FlashMLA prefill (`flash_mla_prefill`)
+- [x] Increase `MAX_NUM_SEQS` to 32 (batched inference)
 - [ ] Enable prefix caching (`supports_prefix_caching=True`)
-- [ ] Increase `MAX_NUM_SEQS` beyond 1 (batched inference)
 - [ ] 8-bit checkpoint ingestion (TT block-float conversion pipeline)
 - [ ] Soak test (hours-long stability)
 - [ ] OpenCode coding suite gate
