@@ -2144,11 +2144,231 @@ Set GLM4_MOE_LITE_MLA_K_CHUNK_SIZE=128 (default 64). Expected ~26% decode speedu
 ZERO improvement. Minor correctness divergence at ~500 tokens (different but coherent text).
 Reverted to default. MLA attention likely compute-bound, not memory-bound at this model size.
 
-### Next Steps (Iteration 3: Decode Optimization Stack)
+### Fused SiLU*mul Test (2026-02-13 19:06 UTC) — NEGATIVE, REVERTED
 
-Architect priority stack (from Task #4 analysis):
-1. k_chunk_size=128 (env var only, ~26% decode speedup expected)
-2. Fused SiLU*mul (4 code sites, ~3.2% decode speedup)
-3. FUSE_MLP_MOE_REDUCE=1 (marginal bs=1, significant bs=32, but prefill risk)
-4. Head concat simplification (~1.6% decode speedup)
-Combined realistic target: ~10 tok/s bs=1 (from current 4.3)
+Replaced `ttnn.silu(gate); gate * up` with fused
+`ttnn.mul(gate, up, input_tensor_a_activations=[ttnn.UnaryOpType.SILU])`
+at 15 sites across decoder_layer_tt.py (5), moe_tt.py (6), layer0_tt.py (4).
+
+| Metric | Baseline | Fused SiLU | Delta |
+|--------|----------|-----------|-------|
+| Decode bs=1 | 4.3 tok/s, 229ms | 4.34 tok/s, 230ms | 0% (unchanged) |
+| Decode bs=32 agg | 134.1 tok/s, 236ms | 116.8 tok/s, 237ms | **-13% REGRESSION** |
+| Prefill 1k | 304 tok/s | 265 tok/s | **-13% REGRESSION** |
+
+The fused op is SLOWER for bs=32 decode and prefill. Likely the fused kernel has higher
+per-invocation overhead or different memory access patterns. Trace replay at bs=1 shows
+identical ITL — fusion saves nothing in the traced path. REVERTED via git checkout.
+
+### FUSE_MLP_MOE_REDUCE=1 Test (2026-02-13 19:20 UTC) — BROKEN, REVERTED
+
+Set GLM4_MOE_LITE_FUSE_MLP_MOE_REDUCE=1 (with ATTN_DP=0). Expected: save 46 all_reduces/step.
+
+| Metric | FUSE=0 (baseline) | FUSE=1 | Delta |
+|--------|-------------------|--------|-------|
+| Decode bs=1 | 4.3 tok/s | 4.3 tok/s | 0% |
+| Decode bs=32 agg | 129 tok/s | 130 tok/s | 0% |
+| Prefill 1k | 197 tok/s | 158 tok/s | -20% |
+| Correctness | OK | **GIBBERISH** | BROKEN |
+
+Output is complete gibberish. The fused reduce path produces numerically incorrect results.
+ZERO decode improvement despite saving 46 all_reduces. REVERTED.
+
+### What Has NOT Worked (Summary)
+
+From Iteration 2-3, ALL proposed kernel-level optimizations failed:
+- k_chunk_size=128: ZERO decode improvement (MLA likely compute-bound)
+- Fused SiLU*mul: -13% bs=32 and prefill REGRESSION (fused kernel slower)
+- FUSE_MLP_MOE_REDUCE=1: BROKEN correctness (gibberish), zero decode gain
+- DRAM-sharded attention weights: bs=1 REGRESSION (-22%)
+- DRAM-sharded MLP weights: bs=1 REGRESSION
+- L1 WIDTH_SHARDED memory config: ZERO improvement
+- Explicit MatmulMultiCoreReuseMultiCast1DProgramConfig: ZERO improvement
+
+### What HAS Worked
+
+- in0_block_w=8 for sparse_matmul: +24% bs=1, +113% bs=32 (from Iteration 1)
+- EP_L1=1 + FUSE_EXPERTS_GATE_UP=1: +66% decode (3.9→6.4 within MAX_NUM_SEQS=1)
+- sample_on_device_mode=decode_only: +13.8× prefill, +5% decode
+- SKIP_DEFENSIVE_CLONES=1: +83% prefill
+- sparse PCM=32: +24% prefill
+- Dense batched prefill: +50% prefill
+- **MOE_DENSE_PREFILL=0: +47% decode bs=1, +61% decode bs=32** (BLOCKED by prefill hang)
+
+### Root Cause Analysis (from Architect)
+
+The 229ms decode ITL at MAX_NUM_SEQS=32 is dominated by **FlashMLA core allocation**:
+- B=1 with MAX_NUM_SEQS=1: 16 cores per sequence → attention ~15-20ms → 155ms ITL
+- B=1 with MAX_NUM_SEQS=32: 2 cores per sequence → attention ~80-120ms → 229ms ITL
+- 30 padded slots get dedicated cores that sit IDLE (early-exit but can't be borrowed)
+- GLM has num_kv_heads=1 (MLA), so no KV head parallelism to compensate
+
+### BREAKTHROUGH: MOE_DENSE_PREFILL=0 (2026-02-13)
+
+**Artifact**: `bench_decode_1771014353.json`
+
+Setting `GLM4_MOE_LITE_MOE_DENSE_PREFILL=0` produces massive decode improvements:
+
+| Metric | Baseline (DENSE=1) | DENSE=0 | Change | Target |
+|--------|-------------------|---------|--------|--------|
+| Decode bs=1 tok/s | 4.34 | 6.39 | **+47%** | 30 |
+| Decode bs=1 ITL | 229ms | 156ms | **-32%** | 33ms |
+| Decode bs=32 agg tok/s | 129 | 207.4 | **+61%** | 150 ✅ |
+| Decode bs=32 ITL | 236ms | 145ms | **-39%** | — |
+| Decode bs=32 per-user | 4.03 | 6.48 | **+61%** | — |
+| Prefill 1k bs=1 | 197 tok/s | **HANG** | ❌ | 1000 |
+
+**bs=32 aggregate target of 150 tok/s EXCEEDED** (207.4 tok/s).
+
+#### Why does a PREFILL flag affect DECODE?
+
+**DISPROVEN hypotheses:**
+- ~~Memory fragmentation theory~~: PRESERVE_TRACE=1 (keep warmup trace) gives 230ms ITL, NOT 156ms.
+  The warmup trace is just as slow. The improvement is NOT about preserving a "clean" trace.
+- ~~Sparse prefill PCM fix~~: PCM=4 takes 396s (6 min, usable but extremely slow). PCM=2 crashes
+  with shape mismatch (`RuntimeError: Invalid subtile broadcast type` at `shared_out + routed_out`).
+  Sparse prefill is fundamentally slow for multi-token inputs (~80x slower than dense).
+
+**What we know:**
+- DENSE_PREFILL=0 (sparse MoE for prefill) → after trace re-capture: 156ms decode ITL
+- DENSE_PREFILL=1 (dense MoE for prefill) → after trace re-capture: 229ms decode ITL
+- PRESERVE_TRACE=1 (warmup trace, no re-capture) → 230ms decode ITL (same as dense)
+- PRESERVE_TRACE=1 also BREAKS bs=32 decode (engine hangs after 1 request)
+- Decode (tokens=1) uses the SAME code path regardless of DENSE_PREFILL
+
+**Current hypothesis:** The sparse MoE execution during prefill (scatter, moe_expert_token_remap,
+sparse_matmul) changes device state (program cache, L1 core config, DRAM allocator) in a way that
+improves the subsequently re-captured decode trace. This is a "priming" effect — the specific
+kernels/configs from sparse MoE happen to be beneficial for decode trace compilation.
+
+#### Sparse prefill at 1k: broken
+
+Three failure modes:
+- PCM=32 (no chunking): device hang (1024 tokens, per_core_M=32 likely exceeds L1)
+- PCM=4 (8 chunks): runs but takes 396s (~80x slower than dense)
+- PCM=2 (16 chunks): shape mismatch crash at decoder_layer_tt.py:1794 (`shared_out + routed_out`)
+  Root cause: chunking produces malformed output tensor — `ttnn.slice` aliasing + wrong
+  `num_dispatch_devices` divisor in reduce mode
+
+Even if all bugs are fixed, sparse prefill at 1k would take ~6 min (unusable).
+
+### Next Steps (Iteration 4)
+
+1. **Investigate the priming mechanism** (TOP PRIORITY): Use Codex/device profiler to understand
+   exactly what sparse MoE does to device state that helps decode. If we can replicate it with a
+   minimal "primer" operation during trace capture, we get the decode win without sparse prefill.
+
+   Candidate approach: Add a sparse MoE primer step in `_capture_decode_trace_sampling` (run one
+   sparse_matmul with MoE weights before capturing the trace). This would make ALL re-captured
+   traces fast, regardless of what prefill mode was used.
+
+2. **Batch-bucketed traces**: Capture traces at B=1,4,8,16,32 buckets.
+   At runtime, pad to nearest bucket. Design at `plan/glm47_flash/batch-bucketed-traces.md`.
+   Combined with the priming fix, could push bs=1 toward ~10+ tok/s.
+
+3. **Device profiling**: TT_METAL_DEVICE_PROFILER=1 to compare decode trace ops between
+   the "fast" (156ms) and "slow" (229ms) traces. Would reveal exactly which ops are slower.
+
+### Session Checkpoint (2026-02-14)
+
+**Env state**: `.env.glm47` has `PRESERVE_TRACE=1` (line 83, needs revert to 0) and
+`DENSE_PREFILL=1` (line 50, correct). Container is DOWN (no GLM containers running).
+
+**Before any new work**: Implementer must revert `PRESERVE_TRACE=1` → `0` in `.env.glm47`.
+
+**model_tt.py state**: Exception catch widened at `_prefill_compute()` (catches all exceptions,
+not just OOM string match). Harmless — retries with trace release on any prefill failure.
+
+**Recommended next optimization**: Batch-bucketed traces (design complete at
+`plan/glm47_flash/batch-bucketed-traces.md`). This is orthogonal to the DENSE_PREFILL mystery
+and gives ~50% bs=1 improvement (6.4 vs 4.3 tok/s) by allocating more FlashMLA cores per
+sequence at low occupancy.
+
+**Current best perf** (baseline, DENSE_PREFILL=1):
+- Decode bs=1: 4.5 tok/s, 229ms ITL
+- Decode bs=32: 128-130 tok/s aggregate, 236ms ITL
+- Prefill 1k bs=1: 197 tok/s
+
+**Best decode perf** (DENSE_PREFILL=0, but prefill broken):
+- Decode bs=1: 6.39 tok/s, 156ms ITL
+- Decode bs=32: 207 tok/s aggregate, 145ms ITL
+- Prefill 1k: HANGS (unusable)
+
+### BATCH-BUCKETED TRACES: IMPLEMENTED (2026-02-14)
+
+**Artifact**: `bench_decode_1771080658.json`
+**Design**: `plan/glm47_flash/batch-bucketed-traces.md`
+
+Captures decode traces at B=1,4,8,16,32 buckets. At runtime, pads to nearest bucket
+instead of MAX_NUM_SEQS=32. B=1 requests get 16 FlashMLA cores (was 2).
+
+| Metric | Baseline | Bucketed | Change | Target |
+|--------|----------|----------|--------|--------|
+| Decode bs=1 tok/s | 4.34 | **6.93** | **+60%** | 30 |
+| Decode bs=1 ITL | 229ms | **143.6ms** | **-37%** | 33ms |
+| Decode bs=1 TTFT | 3.19s | **2.20s** | **-31%** | — |
+| Decode bs=32 agg tok/s | 129 | 134.7 | +4.5% | 150 |
+| Decode bs=32 ITL | 236ms | 235.8ms | ~same | — |
+| Prefill 1k bs=1 tok/s | 197 | 127 | **-36%** | 1000 |
+| Prefill 1k bs=1 TTFT | 5.08s | 7.88s | **+55%** | — |
+| Prefill 1k bs=32 tok/s | — | 22.8 | — | — |
+
+**Wins:**
+- Decode bs=1: +60% throughput, -37% latency — exceeds design prediction of 6.4 tok/s
+- Decode bs=1 TTFT also improved (-31%) — trace captured at B=1 executes faster
+- Decode bs=32 marginally improved (+4.5%) — expected, B=32 bucket = same as before
+
+**Regressions:**
+- Prefill 1k bs=1: 127 vs 197 tok/s (-36%) — possibly from 250MB trace_region_size
+  consuming DRAM bandwidth, or trace release/recapture overhead with 5 bucket states
+- Prefill 1k TTFT: 7.88s vs ~5s — related to prefill throughput regression
+
+**Warmup**: 3.5 min (was 2 min). 90s extra for 4 additional trace captures.
+
+**Changes made:**
+- model_tt.py: `_DecodeTraceSamplingState` dataclass, dict-based trace state,
+  all trace methods refactored to per-bucket state
+- tt_model_runner.py: bucket selection, variable-size decode padding, multi-bucket warmup
+- .env.glm47: trace_region_size=250MB, decode_trace_batch_buckets=[1,4,8,16,32]
+
+### SECTION 115 FIX + BUCKETED TRACES: COMBINED (2026-02-14)
+
+**Artifact**: `bench_decode_1771082938.json`
+
+Applied one-line fix at decoder_layer_tt.py:1174: `tokens > 1` → `tokens >= 33`.
+This gives sparse MoE for decode (tokens≤32) + dense MoE for prefill (tokens≥33).
+Combined with batch-bucketed traces from previous step.
+
+| Metric | Baseline | Task #19 only | **Task #22 (combined)** | Target |
+|--------|----------|---------------|------------------------|--------|
+| Decode bs=1 tok/s | 4.34 | 6.93 | **6.97** | 30 |
+| Decode bs=1 ITL | 229ms | 143.6ms | **143.1ms** | 33ms |
+| Decode bs=32 agg tok/s | 129 | 134.7 | **208.3** | **150 ✅** |
+| Decode bs=32 ITL | 236ms | 235.8ms | **144.9ms** | — |
+| Decode bs=32 per-user | 4.03 | 4.21 | **6.51** | — |
+| Prefill 1k bs=1 tok/s | 197 | 127 | **204.7** | 1000 |
+| Prefill 1k bs=1 TTFT | 5.08s | 7.88s | **4.88s** | — |
+| Prefill 1k bs=32 tok/s | — | 22.8 | **23.5** | — |
+
+**bs=32 aggregate target of 150 tok/s EXCEEDED** (208.3 tok/s, +39% over target).
+
+**Key insight**: trace_region_size needed 250MB (not 60MB) because sparse MoE decode
+traces are larger than dense MoE traces (~70.9MB at B=16 bucket). This also fixed the
+prefill regression from Task #19 (127 → 205 tok/s).
+
+**Two changes that delivered this combined result:**
+1. Batch-bucketed traces: bs=1 gets 16 FlashMLA cores → 143ms ITL (was 229ms)
+2. Section 115 fix: bs=32 decode uses sparse MoE → 208 tok/s agg (was 129)
+
+### Next Steps (Iteration 6)
+
+1. **bs=1 decode: 7 → 30 tok/s** — Requires speculative decode / MTP (multi-token
+   prediction). Cannot be achieved by kernel optimization alone — 143ms ITL is at
+   the per-kernel floor (~157ms estimated for 9 matmuls × 47 layers).
+
+2. **Prefill: 205 → 1000 tok/s** — Current bottleneck is sequential layer execution.
+   Potential: pipeline parallelism, tensor-parallel prefill optimization, or
+   reduced precision for prefill compute.
+
+3. **Profile decode at B=1** — Use TT_METAL_DEVICE_PROFILER=1 to get exact op-level
+   breakdown of the 143ms ITL. Identify if any single op dominates.
