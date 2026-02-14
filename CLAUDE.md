@@ -288,7 +288,7 @@ Three roles only:
 |------|-----------|-------------|-------------------|
 | **Team Lead** | `team-lead` | Delegates, coordinates, evaluates results | Edit files, run docker, run benchmarks |
 | **Architect** | `architect` | Research via Codex, design optimizations | Edit files, run docker, run benchmarks |
-| **Implementer** | `implementer` | Edit code, restart containers, benchmark | Design optimizations, make architectural decisions |
+| **Implementer** | `implementer` | Edit code, restart containers, benchmark | Design optimizations, make architectural decisions, use Codex to implement code |
 
 ### CRITICAL: Team Lead Delegation Rule
 
@@ -307,10 +307,16 @@ The team lead **ONLY**:
 **If you are the team lead and about to edit a file or run docker: STOP.
 Send the instruction to the implementer instead.**
 
+### CRITICAL: Implementer Codex Rule
+
+Implementers **may use Codex for advice only** (understanding APIs, debugging errors, asking
+"how does X work?"). Implementers **MUST NOT** use Codex to generate or implement code.
+Codex-driven implementation is the architect's job — implementers write code directly.
+
 ### Key Rules
 
 1. **ONE implementer at a time** -- never spawn two (they corrupt code/containers)
-2. **Always consult Codex** (`mcp__codex-cli__codex` with model="gpt-5.2") at every architectural decision
+2. **Always consult Codex** (`mcp__codex-cli__codex` with model="gpt-5.2") at every architectural decision (architect only)
 3. **Feature-flag everything** -- new optimizations behind env vars with safe defaults
 4. **Work in worktrees** -- all changes in `ws/glm47_flash/`, never in main `docker_tt/`
 5. **Record everything** -- benchmark results go to `plan/glm47_flash/perf-opt.md`

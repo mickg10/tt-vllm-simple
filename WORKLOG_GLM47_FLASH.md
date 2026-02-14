@@ -12,7 +12,8 @@ docker compose --env-file dev/.env.glm47 -f dev/docker-compose.yml \
 ```
 
 This is the **primary path** for GLM-4.7-Flash development. It uses the perf-trace-tp
-config (tracing enabled, TP sharding, bf8 KV cache) which produces ~6 tok/s with coherent output.
+config (tracing enabled, TP sharding, bf8 KV cache, batch-bucketed traces) which produces
+~7 tok/s bs=1, ~208 tok/s aggregate bs=32 with coherent output.
 
 **Correctness variant** (slower, ~3 tok/s, higher fidelity math):
 ```bash
@@ -34,15 +35,24 @@ docker compose --env-file dev/.env.glm47.correctness -f dev/docker-compose.yml \
 - Determinism at `temperature=0`: **PASS** (5 repeats; identical output)
 - No KV-boundary corruption at `pos >= 64` (`--block-size=64`): **PASS**
 
-### Performance (short prompts, end-to-end)
+### Performance (short prompts, end-to-end, 2026-02-14)
 - Reference `:8087` (GPU): **~19 tok/s**
-- TT `:8088` (perf-trace-tp): **~6 tok/s**
+- TT `:8088` decode bs=1: **7.0 tok/s**, 143ms ITL (+56% from baseline)
+- TT `:8088` decode bs=32: **208 tok/s** aggregate, 145ms ITL (**TARGET HIT >150**)
+- TT `:8088` prefill 1k bs=1: **205 tok/s**, 4.9s TTFT
 - TT `:8088` (correctness): **~3 tok/s**
 
+### Key Optimizations (2026-02-14)
+1. **Batch-bucketed traces**: Capture decode traces at B=1,4,8,16,32 instead of only B=32.
+   Low-occupancy requests get more FlashMLA cores per sequence (bs=1: 16 cores vs 2).
+   Implemented in model_tt.py (_DecodeTraceSamplingState) and tt_model_runner.py (bucket padding).
+2. **Section 115 sparse MoE decode fix**: Changed `tokens > 1` to `tokens >= 33` in
+   decoder_layer_tt.py so decode uses sparse MoE (fast) while prefill uses dense MoE (stable).
+
 ### Next Steps
-- Target: 30 tok/s decode
-- Root cause of gap: replicated bring-up (no multi-chip TP sharding beyond dense layers),
-  single-chip MoE latency, prefill still uses decode-loop path
+- Target bs=1: 30 tok/s — needs MTP/speculative decode or deeper kernel optimization
+- Target prefill: 1000 tok/s — needs pipeline parallelism or prefill-specific tracing
+- Root cause of remaining gap: single-chip MoE latency, host-device round-trips in prefill
 
 ## Root Cause Fixed: KV-Boundary Gibberish
 Symptom:
