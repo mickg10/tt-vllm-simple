@@ -113,6 +113,7 @@ services:
       - GLM4_MOE_LITE_DEBUG_LOGITS_SANITY=${GLM4_MOE_LITE_DEBUG_LOGITS_SANITY:-}
       # Debug-only: disable explicit TTNN deallocations (can increase memory usage).
       - GLM4_MOE_LITE_DISABLE_DEALLOC=${GLM4_MOE_LITE_DISABLE_DEALLOC:-}
+      - GLM4_MOE_LITE_CONCAT_HEADS=${GLM4_MOE_LITE_CONCAT_HEADS:-}
       - GLM4_MOE_LITE_BATCHED_PREFILL=${GLM4_MOE_LITE_BATCHED_PREFILL:-}
       - GLM4_MOE_LITE_MOE_SPARSE_PREFILL_PCM=${GLM4_MOE_LITE_MOE_SPARSE_PREFILL_PCM:-}
       - GLM4_MOE_LITE_MOE_DENSE_PREFILL=${GLM4_MOE_LITE_MOE_DENSE_PREFILL:-}
@@ -122,6 +123,7 @@ services:
       - GLM4_MOE_LITE_SHARDED_MLP=${GLM4_MOE_LITE_SHARDED_MLP:-}
       - GLM4_MOE_LITE_SKIP_DEFENSIVE_CLONES=${GLM4_MOE_LITE_SKIP_DEFENSIVE_CLONES:-}
       - GLM4_MOE_LITE_MTP=${GLM4_MOE_LITE_MTP:-}
+      - GLM4_MOE_LITE_MTP_TRACED=${GLM4_MOE_LITE_MTP_TRACED:-}
       # TT-Metal device profiler knobs
       - TT_METAL_DEVICE_PROFILER=${TT_METAL_DEVICE_PROFILER:-}
       - TT_METAL_TRACE_PROFILER=${TT_METAL_TRACE_PROFILER:-}
@@ -151,7 +153,7 @@ services:
       test: ["CMD", "curl", "-sf", "http://localhost:8088/health"]
       interval: 30s
       timeout: 10s
-      start_period: 600s
+      start_period: 1800s
       retries: 3
     ipc: host
     privileged: true
