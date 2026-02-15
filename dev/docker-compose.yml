@@ -122,6 +122,7 @@ services:
       - GLM4_MOE_LITE_SKIP_DEFENSIVE_CLONES=${GLM4_MOE_LITE_SKIP_DEFENSIVE_CLONES:-}
       - GLM4_MOE_LITE_MTP=${GLM4_MOE_LITE_MTP:-}
       - GLM4_MOE_LITE_MTP_TRACED=${GLM4_MOE_LITE_MTP_TRACED:-}
+      - GLM4_MOE_LITE_BATCH_EXPAND=${GLM4_MOE_LITE_BATCH_EXPAND:-}
       - VLLM_SPECULATIVE_CONFIG=${VLLM_SPECULATIVE_CONFIG:-}
       - VLLM_USE_V1=${VLLM_USE_V1:-}
       # TT-Metal device profiler knobs
@@ -149,7 +150,6 @@ services:
       # patched chat template. If/when we re-enable reasoning, add
       # `--reasoning-parser` back behind a dedicated env-file.
       - --override-tt-config=${OVERRIDE_TT_CONFIG:-{}}
-      - --speculative-config={"model":"zai-org/GLM-4.7-Flash","num_speculative_tokens":1}
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8088/health"]
       interval: 30s
