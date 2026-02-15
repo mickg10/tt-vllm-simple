@@ -282,13 +282,17 @@ For multi-agent performance sprints, use Claude Code's team infrastructure
 
 Full doc: `/home/ttuser/src_docker/plan/glm47_flash/team-structure.md`
 
-Three roles only:
+Five roles:
 
 | Role | Agent Name | What It Does | What It NEVER Does |
 |------|-----------|-------------|-------------------|
 | **Team Lead** | `team-lead` | Delegates, coordinates, evaluates results | Edit files, run docker, run benchmarks |
 | **Architect** | `architect` | Research via Codex, design optimizations | Edit files, run docker, run benchmarks |
 | **Implementer** | `implementer` | Edit code, restart containers, benchmark | Design optimizations, make architectural decisions, use Codex to implement code |
+| **Researcher** | `<topic>-researcher` | Deep-dive code/papers, write detailed research docs | Edit code, run docker. READ-ONLY. Always opus 4.6. |
+| **Perf-Researcher** | `perf-researcher` | Synthesize ALL research into perf projections (~hourly) | Edit code, run docker. Reads all docs, uses Codex to validate. |
+
+**ALL researchers MUST write detailed findings to `plan/glm47_flash/<topic>.md` — not just messages.**
 
 ### CRITICAL: Team Lead Delegation Rule
 
