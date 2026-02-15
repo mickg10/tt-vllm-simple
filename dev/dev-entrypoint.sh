@@ -244,6 +244,12 @@ if [ "${DEV_RUN_CMD:-0}" = "1" ]; then
     exec "$@"
 fi
 
+# Speculative decoding config (MTP draft tokens)
+if [ -n "${VLLM_SPECULATIVE_CONFIG:-}" ]; then
+    set -- "--speculative-config" "${VLLM_SPECULATIVE_CONFIG}" "$@"
+    echo "Speculative decoding enabled: ${VLLM_SPECULATIVE_CONFIG}"
+fi
+
 echo ""
 echo "=== Dev setup complete, starting vLLM ==="
 echo ""
