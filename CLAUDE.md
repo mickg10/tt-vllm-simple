@@ -344,6 +344,87 @@ TeamCreate(team_name="glm-perf-sprint-N", description="GLM-4.7-Flash perf optimi
 # See plan/glm47_flash/team-structure.md for prompt templates and full details
 ```
 
+## Performance Sprint Documentation
+
+All perf sprint docs live outside git at `/home/ttuser/src_docker/plan/glm47_flash/`.
+On every session start or context compaction, re-read these files:
+
+### Must-Read on Session Start
+
+| File | Purpose |
+|------|---------|
+| `plan/glm47_flash/resume.md` | Current state, active workstreams, next steps |
+| `plan/glm47_flash/team-structure.md` | Team roles and rules (team lead ONLY delegates) |
+| `plan/glm47_flash/perf-opt.md` (last 300 lines) | Master optimization log — latest results + profiling data |
+| `plan/glm47_flash/bottleneck-analysis.md` | Revised ITL breakdown (~15us program overhead, NOT 210us) |
+
+### Critical Rules (from lessons learned)
+
+- **BF4 is BANNED** — use BF8 minimum for all weight dtypes. BF4 produces garbled output.
+- **MTP is BANNED (temporarily)** — Do NOT work on MTP speculative decode. Focus on megafusion first. MTP adds complexity and makes the codebase harder to optimize long-term. Revisit only after megafusion is complete.
+- **Program-count fusion is a dead end** — ~15us/program in trace mode, not worth weeks of C++.
+- **Tracy device profiler crashes GLM warmup** — use Python sync profiling instead.
+- **DRAM-sharded matmuls are a dead end for GLM** — regression -3 to -8%. L1-based matmuls already optimal for GLM's small dimensions.
+- **SharedExpertOp needs 13x10 grid** — T3K 8x8 CANNOT run it. Galaxy CAN. T3K needs 32A+32B redesign.
+
+### Profiling Results (definitive per-block decode timing at bs=1, 131ms ITL)
+
+| Block | ms | % | Notes |
+|-------|-----|---|-------|
+| moe_experts | 28.7 | 21.9% | Sparse matmul, 2 experts |
+| kv_cache_update | 24.2 | 18.5% | paged_update_cache K+V — surprisingly expensive |
+| q_path | 19.0 | 14.5% | q_a_proj + layernorm + q_b_proj + q_rope |
+| attn_out | 19.0 | 14.5% | o_proj + residual add |
+| moe_router | 17.7 | 13.5% | Gate matmul + top-k + dispatch |
+| moe_shared | 10.9 | 8.3% | Shared expert gate_up + down |
+| flash_mla_decode | 4.0 | 3.1% | Actual attention — trivially cheap |
+| other | 7.5 | 5.7% | Norms, merge, residual |
+
+### Active Research
+
+| File | Purpose |
+|------|---------|
+| `plan/glm47_flash/v1-vllm-research.md` | V1 engine: 11ms regression root cause, batch-bucketed traces opportunity |
+| `plan/glm47_flash/optimal-fusion-kernel-design.md` | Fusion kernel design: ceiling 16-20 tok/s effective |
+| `plan/glm47_flash/tracy-profiling-guide.md` | Tracy env vars, analysis scripts, implementer checklist |
+| `plan/glm47_flash/dsv3-comparison-v2.md` | DSv3 patterns vs GLM architecture |
+
+### Reference (read as needed)
+
+| File | Purpose |
+|------|---------|
+| `plan/glm47_flash/fusion-analysis-v2.md` | Fusion targets (projections INVALIDATED by ~15us finding) |
+| `plan/glm47_flash/hardware-floor-analysis.md` | ~12-14ms hardware floor estimate |
+| `plan/glm47_flash/strategic-research.md` | High-level optimization strategy |
+| `plan/glm47_flash/hang-debugging-recipe.md` | py-spy, tt-triage, device crash recovery |
+| `plan/glm47_flash/mtp-implementation-plan.md` | MTP speculative decode implementation spec |
+| `plan/glm47_flash/mtp-spec-decode-integration.md` | MTP + vLLM V1 integration design |
+| `plan/glm47_flash/rope-optimization-research.md` | RoPE pad elimination (committed) |
+| `plan/glm47_flash/dsv3-sharedexpert-deepdive.md` | SharedExpertOp C++ deep dive (needs 13x10 grid) |
+| `plan/glm47_flash/glm-shared-expert-fusion-design.md` | GLM fusion design (INFEASIBLE on T3K) |
+
+### Galaxy Wormhole Machine
+
+- SSH: `ssh user@38.97.6.6 -p 55211`
+- 32 Wormhole chips, MESH_DEVICE=TG, grid 8×4
+- Repos at `/home/user/src_docker/{docker_tt,tt-metal,vllm}` (direct clones, NOT worktrees)
+- Env: `dev/.env.glm47.galaxy`, Compose override: `dev/docker-compose.galaxy.yml`
+- Start: `sg docker -c 'docker compose --env-file dev/.env.glm47.galaxy -f dev/docker-compose.yml -f dev/docker-compose.galaxy.yml up -d vllm-tt'`
+- Baseline (bf4, garbled): 5.2 tok/s bs=1, 166 tok/s bs=32 — bf8 rebenchmark pending
+- Storage is persistent (7TB /home, named Docker volumes)
+
+### Key Model Code Entry Points
+
+| File | What |
+|------|------|
+| `ws/glm47_flash/tt-metal/models/demos/glm4_moe_lite/tt/decoder_layer_tt.py` | Decode + prefill forward pass (~1900 lines) |
+| `ws/glm47_flash/tt-metal/models/demos/glm4_moe_lite/tt/layer_weights.py` | Weight loading and preparation |
+| `ws/glm47_flash/tt-metal/models/demos/glm4_moe_lite/tt/generator_vllm.py` | THE vLLM interface file |
+| `ws/glm47_flash/vllm/vllm/worker/tt_worker.py` | TT device worker (program cache, tracing) |
+| `ws/glm47_flash/docker_tt/dev/.env.glm47` | All env flags for GLM config |
+| `ws/glm47_flash/docker_tt/dev/docker-compose.yml` | Container definition and env passthrough |
+| `ws/glm47_flash/docker_tt/tests/bench_decode.py` | Benchmark script |
+
 ## Upstream Repositories
 
 - tt-metal: https://github.com/tenstorrent/tt-metal (branch: main)
