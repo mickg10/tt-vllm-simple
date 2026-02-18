@@ -74,3 +74,29 @@ Two changes:
 - DeepSeek V3 does NOT implement batch-bucketed traces — this is new capability
 - 60MB trace_region_size was insufficient (TT_FATAL at B=16 with sparse MoE trace ~70.9MB)
 - First request to a new bucket has ~6s latency spike if not pre-warmed during startup
+
+---
+
+## V1 Engine Port (2026-02-17)
+
+The V0 implementation above was specific to `model_tt.py` and V0's `tt_model_runner.py`. When we switched to VLLM_USE_V1=1, the V1 engine at `vllm/v1/worker/tt_model_runner.py` did NOT read the `decode_trace_batch_buckets` config — it always padded decode batches to `max_num_seqs=32`.
+
+### V1 Changes (commit e7374bd)
+
+Three changes to `vllm/v1/worker/tt_model_runner.py`:
+
+1. **Constructor (lines 127-140)**: Read `decode_trace_batch_buckets` from `override_tt_config`. Auto-append `max_num_seqs` if not present. Store as sorted list.
+
+2. **Decode padding (lines 519-526)**: Replace hardcoded `input_batch.max_num_reqs` with nearest-bucket lookup. For each decode step, find the smallest bucket >= current batch size.
+
+3. **Warmup (lines 1559-1566)**: Loop over all bucket sizes instead of single warmup at `max_num_seqs`. Each bucket gets its own traced decode.
+
+### V1 Results (gen=500, warm device)
+
+| Metric | V1 no bucketing | V1 with bucketing | Delta |
+|--------|----------------|-------------------|-------|
+| bs=1 ITL | 150ms | 140.1ms | -9.9ms (6.6%) |
+| bs=1 tok/s | 6.5 | 7.0 | +0.5 (7.7%) |
+| bs=32 agg tok/s | 212.8 | 248.6 | +35.8 (16.8%) |
+
+The bs=32 improvement was unexpected — per-bucket trace capture may produce better-optimized traces.
