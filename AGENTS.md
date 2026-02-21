@@ -46,7 +46,7 @@ ARCHITECT evaluates results
 
 - **Model code:** `tt-metal/models/demos/glm4_moe_lite/tt/`
 - **Env config:** `docker_tt/dev/.env.glm47`
-- **Perf log:** `/home/ttuser/src_docker/plan/glm47_flash/perf-opt.md`
+- **Perf log:** `/home/ttuser/src_docker/plan/glm47_flash/small_wormhole/perf-opt.md`
 - **Benchmark:** `docker_tt/tests/bench_matrix.py`
 - **Coherency:** `docker_tt/tests/run_coherency.py` (32 tests)
 - **DeepSeek ref:** `tt-metal/models/demos/deepseek_v3/tt/`
@@ -59,7 +59,7 @@ ARCHITECT evaluates results
 mcp__codex-cli__codex(
     prompt="...",
     model="gpt-5.2",
-    cwd="/home/ttuser/src_docker/ws/glm47_flash"
+    cwd="/home/ttuser/src_docker/ws/glm47_flash_small_wormhole"
 )
 ```
 

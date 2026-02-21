@@ -1,12 +1,12 @@
 # GLM-4.7-Flash On TT: Worklog (WIP)
 
 This file is a lightweight, in-repo pointer and snapshot for the `glm47_flash` effort.
-The canonical planning/docs live outside git under `/home/ttuser/src_docker/plan/glm47_flash/`.
+The canonical planning/docs live outside git under `/home/ttuser/src_docker/plan/glm47_flash/small_wormhole/`.
 
 ## Standard Dev Run
 
 ```bash
-cd /home/ttuser/src_docker/ws/glm47_flash/docker_tt
+cd /home/ttuser/src_docker/ws/glm47_flash_small_wormhole/docker_tt
 docker compose --env-file dev/.env.glm47 -f dev/docker-compose.yml \
   up -d --force-recreate vllm-tt
 ```
@@ -98,6 +98,6 @@ docker compose up -d --build
 ```
 
 ## References
-- Plan/docs (canonical): `/home/ttuser/src_docker/plan/glm47_flash/`
-- Bring-up runbook: `/home/ttuser/src_docker/plan/glm47_flash/resume.md`
-- Porting playbook: `/home/ttuser/src_docker/plan/glm47_flash/migrate_model_to_tt.md`
+- Plan/docs (canonical): `/home/ttuser/src_docker/plan/glm47_flash/small_wormhole/`
+- Bring-up runbook: `/home/ttuser/src_docker/plan/glm47_flash/small_wormhole/resume.md`
+- Porting playbook: `/home/ttuser/src_docker/plan/glm47_flash/small_wormhole/migrate_model_to_tt.md`

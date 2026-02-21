@@ -230,7 +230,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--artifact-dir",
-        default="/home/ttuser/src_docker/plan/glm47_flash/artifacts",
+        default="/home/ttuser/src_docker/plan/glm47_flash/small_wormhole/artifacts",
     )
     args = parser.parse_args()
 
