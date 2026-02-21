@@ -5255,7 +5255,7 @@ Then investigate whether k_chunk_size=128 corruption was fixed by other changes
 
 ### Files Updated in This Research Session
 
-- `/home/ttuser/src_docker/plan/glm47_flash/research_questbox_wormholex4_tt.md`
+- `/home/ttuser/src_docker/plan/glm47_flash/small_wormhole/research_questbox_wormholex4_tt.md`
   - Sections 54-59 added (all_reduce cost revision, DRAM-sharded revision,
     prior sprint correction, regression investigation, final recommendations,
     definitive regression analysis)
@@ -6601,7 +6601,7 @@ Non-matmul ops slow by 28%, BUT matmul speedup: 35-50%.
 Conservative estimate: 185-210ms ITL = 4.8-5.4 tok/s (from 243ms = 4.1 tok/s).
 With k_chunk_size=128 recovery: 121-146ms ITL = 6.8-8.3 tok/s.
 
-Full details in `/home/ttuser/src_docker/plan/glm47_flash/research_sections_68_69.md`.
+Full details in `/home/ttuser/src_docker/plan/glm47_flash/small_wormhole/research_sections_68_69.md`.
 
 ---
 

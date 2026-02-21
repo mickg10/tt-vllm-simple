@@ -2,7 +2,7 @@
 
 Last updated: 2026-02-18
 
-For the full optimization log (5000+ lines), see: `plan/glm47_flash/perf-opt.md`
+For the full optimization log (5000+ lines), see: `plan/glm47_flash/small_wormhole/perf-opt.md`
 
 ## Current Best Performance
 

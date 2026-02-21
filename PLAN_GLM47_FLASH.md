@@ -92,9 +92,9 @@ Three repos coordinated via bare git repos + worktrees:
 
 | Repo | Branch | Location | Purpose |
 |------|--------|----------|---------|
-| `docker_tt` | `glm47_flash` | `ws/glm47_flash/docker_tt/` | Docker orchestration, env files, tests |
-| `tt-metal` | `glm47_flash` | `ws/glm47_flash/tt-metal/` | TT model code (the actual implementation) |
-| `vllm` | `glm47_flash` | `ws/glm47_flash/vllm/` | vLLM config shim, platform registration |
+| `docker_tt` | `glm47_flash` | `ws/glm47_flash_small_wormhole/docker_tt/` | Docker orchestration, env files, tests |
+| `tt-metal` | `glm47_flash` | `ws/glm47_flash_small_wormhole/tt-metal/` | TT model code (the actual implementation) |
+| `vllm` | `glm47_flash` | `ws/glm47_flash_small_wormhole/vllm/` | vLLM config shim, platform registration |
 
 Bare repos at `/home/ttuser/src_docker/{docker_tt,tt-metal,vllm}.git`
 
@@ -106,7 +106,7 @@ GitHub forks:
 ### 2.2 Running the Dev Stack
 
 ```bash
-cd /home/ttuser/src_docker/ws/glm47_flash/docker_tt
+cd /home/ttuser/src_docker/ws/glm47_flash_small_wormhole/docker_tt
 docker compose --env-file dev/.env.glm47 -f dev/docker-compose.yml \
   up -d --force-recreate vllm-tt
 ```
@@ -858,7 +858,7 @@ Expert weights use BF8 (smaller and tolerated by MoE math), but dense path stays
 
 ### 11.1 Canonical Planning Documents
 
-Located at `/home/ttuser/src_docker/plan/glm47_flash/`:
+Located at `/home/ttuser/src_docker/plan/glm47_flash/small_wormhole/`:
 
 | File | Contents |
 |------|----------|
@@ -882,7 +882,7 @@ Located at `/home/ttuser/src_docker/plan/glm47_flash/`:
 
 ### 11.3 Benchmark Artifacts
 
-Located at `/home/ttuser/src_docker/plan/glm47_flash/artifacts/`:
+Located at `/home/ttuser/src_docker/plan/glm47_flash/small_wormhole/artifacts/`:
 - `benchmark_8087_vs_8088_*.md/.json` — A/B throughput snapshots
 - `determinism_probe_*.md` — Determinism validation results
 - `perf_iterations/iteration_*.md/.json` — All benchmark iteration results (30+ runs)
