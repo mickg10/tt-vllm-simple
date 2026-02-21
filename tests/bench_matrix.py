@@ -287,7 +287,7 @@ async def main():
         )
 
     # Write JSON output
-    output_path = f"/home/ttuser/src_docker/plan/glm47_flash/artifacts/bench_matrix_{int(time.time())}.json"
+    output_path = f"/home/ttuser/src_docker/plan/glm47_flash/small_wormhole/artifacts/bench_matrix_{int(time.time())}.json"
     with open(output_path, "w") as f:
         json.dump({"timestamp": time.time(), "results": all_results}, f, indent=2)
     print(f"\nResults saved to: {output_path}")

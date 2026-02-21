@@ -246,7 +246,7 @@ async def main():
     print(f"{'=' * 90}")
 
     # Save results
-    output_path = f"/home/ttuser/src_docker/plan/glm47_flash/artifacts/coherency_{int(time.time())}.json"
+    output_path = f"/home/ttuser/src_docker/plan/glm47_flash/small_wormhole/artifacts/coherency_{int(time.time())}.json"
     with open(output_path, "w") as f:
         json.dump({
             "timestamp": time.time(),

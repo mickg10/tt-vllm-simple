@@ -262,14 +262,15 @@ Configure in `scripts/workspace.env`.
 
 Each model bring-up lives on its own branch (same name across all three repos) with a
 `WORKLOG_*.md` file tracking status, run commands, and known issues. Detailed research
-and iteration logs live outside git in `/home/ttuser/src_docker/plan/<model_name>/`.
+and iteration logs live outside git in `/home/ttuser/src_docker/plan/<model_name>/<device>/`
+and `/home/ttuser/src_docker/plan/<model_name>/_global/`.
 
 ### GLM-4.7-Flash (GLM-4, GLM4 MoE Lite)
 1. Create the workspace: `make workspace-create NAME=glm47_flash`
    (This fetches from origin and checks out existing `glm47_flash` branches automatically.)
-2. Read `ws/glm47_flash/docker_tt/WORKLOG_GLM47_FLASH.md` for run commands and current status
-3. Read `ws/glm47_flash/docker_tt/PLAN_GLM47_FLASH.md` for architecture, history, and next steps
-4. The workspace is at `ws/glm47_flash/` -- all three repos have matching branches
+2. Read `ws/glm47_flash_small_wormhole/docker_tt/WORKLOG_GLM47_FLASH.md` for run commands and current status
+3. Read `ws/glm47_flash_small_wormhole/docker_tt/PLAN_GLM47_FLASH.md` for architecture, history, and next steps
+4. The workspace is at `ws/glm47_flash_small_wormhole/` -- all three repos have matching branches
 5. tt-metal fork: https://github.com/mickg10/tt-metal/tree/glm47_flash
 6. vllm fork: https://github.com/mickg10/vllm/tree/glm47_flash
 
@@ -280,7 +281,7 @@ For multi-agent performance sprints, use Claude Code's team infrastructure
 
 ### Team Structure
 
-Full doc: `/home/ttuser/src_docker/plan/glm47_flash/team-structure.md`
+Full doc: `/home/ttuser/src_docker/plan/glm47_flash/_global/team-structure.md`
 
 Five roles:
 
@@ -292,7 +293,7 @@ Five roles:
 | **Researcher** | `<topic>-researcher` | Deep-dive code/papers, write detailed research docs | Edit code, run docker. READ-ONLY. Always opus 4.6. |
 | **Perf-Researcher** | `perf-researcher` | Synthesize ALL research into perf projections (~hourly) | Edit code, run docker. Reads all docs, uses Codex to validate. |
 
-**ALL researchers MUST write detailed findings to `plan/glm47_flash/<topic>.md` — not just messages.**
+**ALL researchers MUST write detailed findings to `plan/glm47_flash/small_wormhole/<topic>.md` — not just messages.**
 
 ### CRITICAL: Team Lead Delegation Rule
 
@@ -307,6 +308,7 @@ The team lead **ONLY**:
 - Sends instructions to architect/implementer via `SendMessage`
 - Reads files and results to understand state
 - Updates `perf-opt.md` with findings (the ONE write exception)
+- **CRITICAL:** Updates `plan/glm47_flash/small_wormhole/resume.md` at each step, especially before actions that might crash the device, so that state is persisted for easy resumption.
 
 **If you are the team lead and about to edit a file or run docker: STOP.
 Send the instruction to the implementer instead.**
@@ -322,8 +324,8 @@ Codex-driven implementation is the architect's job — implementers write code d
 1. **ONE implementer at a time** -- never spawn two (they corrupt code/containers)
 2. **Always consult Codex** (`mcp__codex-cli__codex` with model="gpt-5.2") at every architectural decision (architect only)
 3. **Feature-flag everything** -- new optimizations behind env vars with safe defaults
-4. **Work in worktrees** -- all changes in `ws/glm47_flash/`, never in main `docker_tt/`
-5. **Record everything** -- benchmark results go to `plan/glm47_flash/perf-opt.md`
+4. **Work in worktrees** -- all changes in `ws/glm47_flash_small_wormhole/`, never in main `docker_tt/`
+5. **Record everything** -- benchmark results go to `plan/glm47_flash/small_wormhole/perf-opt.md`
 6. **Architect is long-lived** (keeps context), implementer is ephemeral (per-task)
 
 ### The Loop
@@ -341,22 +343,22 @@ Team Lead ──(results)─────────> Architect
 
 ```python
 TeamCreate(team_name="glm-perf-sprint-N", description="GLM-4.7-Flash perf optimization")
-# See plan/glm47_flash/team-structure.md for prompt templates and full details
+# See plan/glm47_flash/_global/team-structure.md for prompt templates and full details
 ```
 
 ## Performance Sprint Documentation
 
-All perf sprint docs live outside git at `/home/ttuser/src_docker/plan/glm47_flash/`.
+All perf sprint docs live outside git at `/home/ttuser/src_docker/plan/glm47_flash/small_wormhole/`.
 On every session start or context compaction, re-read these files:
 
 ### Must-Read on Session Start
 
 | File | Purpose |
 |------|---------|
-| `plan/glm47_flash/resume.md` | Current state, active workstreams, next steps |
-| `plan/glm47_flash/team-structure.md` | Team roles and rules (team lead ONLY delegates) |
-| `plan/glm47_flash/perf-opt.md` (last 300 lines) | Master optimization log — latest results + profiling data |
-| `plan/glm47_flash/bottleneck-analysis.md` | Revised ITL breakdown (~15us program overhead, NOT 210us) |
+| `plan/glm47_flash/small_wormhole/resume.md` | Current state, active workstreams, next steps |
+| `plan/glm47_flash/_global/team-structure.md` | Team roles and rules (team lead ONLY delegates) |
+| `plan/glm47_flash/small_wormhole/perf-opt.md` (last 300 lines) | Master optimization log — latest results + profiling data |
+| `plan/glm47_flash/small_wormhole/bottleneck-analysis.md` | Revised ITL breakdown (~15us program overhead, NOT 210us) |
 
 ### Critical Rules (from lessons learned)
 
@@ -384,24 +386,24 @@ On every session start or context compaction, re-read these files:
 
 | File | Purpose |
 |------|---------|
-| `plan/glm47_flash/v1-vllm-research.md` | V1 engine: 11ms regression root cause, batch-bucketed traces opportunity |
-| `plan/glm47_flash/optimal-fusion-kernel-design.md` | Fusion kernel design: ceiling 16-20 tok/s effective |
-| `plan/glm47_flash/tracy-profiling-guide.md` | Tracy env vars, analysis scripts, implementer checklist |
-| `plan/glm47_flash/dsv3-comparison-v2.md` | DSv3 patterns vs GLM architecture |
+| `plan/glm47_flash/small_wormhole/v1-vllm-research.md` | V1 engine: 11ms regression root cause, batch-bucketed traces opportunity |
+| `plan/glm47_flash/small_wormhole/optimal-fusion-kernel-design.md` | Fusion kernel design: ceiling 16-20 tok/s effective |
+| `plan/glm47_flash/small_wormhole/tracy-profiling-guide.md` | Tracy env vars, analysis scripts, implementer checklist |
+| `plan/glm47_flash/small_wormhole/dsv3-comparison-v2.md` | DSv3 patterns vs GLM architecture |
 
 ### Reference (read as needed)
 
 | File | Purpose |
 |------|---------|
-| `plan/glm47_flash/fusion-analysis-v2.md` | Fusion targets (projections INVALIDATED by ~15us finding) |
-| `plan/glm47_flash/hardware-floor-analysis.md` | ~12-14ms hardware floor estimate |
-| `plan/glm47_flash/strategic-research.md` | High-level optimization strategy |
-| `plan/glm47_flash/hang-debugging-recipe.md` | py-spy, tt-triage, device crash recovery |
-| `plan/glm47_flash/mtp-implementation-plan.md` | MTP speculative decode implementation spec |
-| `plan/glm47_flash/mtp-spec-decode-integration.md` | MTP + vLLM V1 integration design |
-| `plan/glm47_flash/rope-optimization-research.md` | RoPE pad elimination (committed) |
-| `plan/glm47_flash/dsv3-sharedexpert-deepdive.md` | SharedExpertOp C++ deep dive (needs 13x10 grid) |
-| `plan/glm47_flash/glm-shared-expert-fusion-design.md` | GLM fusion design (INFEASIBLE on T3K) |
+| `plan/glm47_flash/small_wormhole/fusion-analysis-v2.md` | Fusion targets (projections INVALIDATED by ~15us finding) |
+| `plan/glm47_flash/small_wormhole/hardware-floor-analysis.md` | ~12-14ms hardware floor estimate |
+| `plan/glm47_flash/small_wormhole/strategic-research.md` | High-level optimization strategy |
+| `plan/glm47_flash/small_wormhole/hang-debugging-recipe.md` | py-spy, tt-triage, device crash recovery |
+| `plan/glm47_flash/small_wormhole/mtp-implementation-plan.md` | MTP speculative decode implementation spec |
+| `plan/glm47_flash/small_wormhole/mtp-spec-decode-integration.md` | MTP + vLLM V1 integration design |
+| `plan/glm47_flash/small_wormhole/rope-optimization-research.md` | RoPE pad elimination (committed) |
+| `plan/glm47_flash/small_wormhole/dsv3-sharedexpert-deepdive.md` | SharedExpertOp C++ deep dive (needs 13x10 grid) |
+| `plan/glm47_flash/small_wormhole/glm-shared-expert-fusion-design.md` | GLM fusion design (INFEASIBLE on T3K) |
 
 ### Galaxy Wormhole Machine
 
@@ -417,13 +419,13 @@ On every session start or context compaction, re-read these files:
 
 | File | What |
 |------|------|
-| `ws/glm47_flash/tt-metal/models/demos/glm4_moe_lite/tt/decoder_layer_tt.py` | Decode + prefill forward pass (~1900 lines) |
-| `ws/glm47_flash/tt-metal/models/demos/glm4_moe_lite/tt/layer_weights.py` | Weight loading and preparation |
-| `ws/glm47_flash/tt-metal/models/demos/glm4_moe_lite/tt/generator_vllm.py` | THE vLLM interface file |
-| `ws/glm47_flash/vllm/vllm/worker/tt_worker.py` | TT device worker (program cache, tracing) |
-| `ws/glm47_flash/docker_tt/dev/.env.glm47` | All env flags for GLM config |
-| `ws/glm47_flash/docker_tt/dev/docker-compose.yml` | Container definition and env passthrough |
-| `ws/glm47_flash/docker_tt/tests/bench_decode.py` | Benchmark script |
+| `ws/glm47_flash_small_wormhole/tt-metal/models/demos/glm4_moe_lite/tt/decoder_layer_tt.py` | Decode + prefill forward pass (~1900 lines) |
+| `ws/glm47_flash_small_wormhole/tt-metal/models/demos/glm4_moe_lite/tt/layer_weights.py` | Weight loading and preparation |
+| `ws/glm47_flash_small_wormhole/tt-metal/models/demos/glm4_moe_lite/tt/generator_vllm.py` | THE vLLM interface file |
+| `ws/glm47_flash_small_wormhole/vllm/vllm/worker/tt_worker.py` | TT device worker (program cache, tracing) |
+| `ws/glm47_flash_small_wormhole/docker_tt/dev/.env.glm47` | All env flags for GLM config |
+| `ws/glm47_flash_small_wormhole/docker_tt/dev/docker-compose.yml` | Container definition and env passthrough |
+| `ws/glm47_flash_small_wormhole/docker_tt/tests/bench_decode.py` | Benchmark script |
 
 ## Upstream Repositories
 

@@ -19,7 +19,7 @@ instead of 2.
 | Decode bs=32 agg tok/s | 129 | **208.3** | **+61%** |
 | Prefill 1k bs=1 tok/s | 197 | **205** | +4% |
 
-Artifact: `plan/glm47_flash/artifacts/bench_decode_1771082938.json`
+Artifact: `plan/glm47_flash/small_wormhole/artifacts/bench_decode_1771082938.json`
 
 ## Problem
 
