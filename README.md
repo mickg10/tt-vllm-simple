@@ -170,6 +170,28 @@ Models with TT backend support:
 
 See [tt-metal model support](https://github.com/tenstorrent/tt-metal/tree/main/models) for the full list.
 
+## Galaxy Wormhole: GLM-4.7-Flash
+
+GLM-4.7-Flash running on a 32-chip Galaxy Wormhole TG mesh (TP=8 x DP=4).
+
+### Best Results
+
+| Metric | Value |
+|--------|-------|
+| bs=1 throughput | 8.1 tok/s (115.7ms ITL) |
+| bs=32 aggregate throughput | 250.2 tok/s (118.2ms ITL) |
+| vs T3K (bs=1) | **+15.7%** |
+
+### Known Issues
+
+- Trace replay hang on 32-chip mesh due to device barrier race condition (requires TT firmware fix). See [trace-replay-hang-analysis.md](docs/glm_47_flash/galaxy_wormhole/trace-replay-hang-analysis.md).
+
+### Documentation
+
+- [Performance optimization log](docs/glm_47_flash/galaxy_wormhole/perf-opt.md)
+- [Trace replay hang analysis](docs/glm_47_flash/galaxy_wormhole/trace-replay-hang-analysis.md)
+- [Galaxy system state](docs/glm_47_flash/galaxy_wormhole/galaxy-system-state.md)
+
 ## Upstream Repositories
 
 - tt-metal: https://github.com/tenstorrent/tt-metal
