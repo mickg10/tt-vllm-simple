@@ -1,0 +1,22 @@
+# Galaxy-specific overrides for docker-compose
+# Fixes worktree mount paths (Galaxy uses direct clones, not worktrees)
+services:
+  vllm-tt:
+    volumes:
+      # Override: bind mount source directories from workspace (Galaxy paths)
+      - ${WORKSPACE_PATH}/tt-metal:/tt-metal:rw
+      - ${WORKSPACE_PATH}/vllm:/vllm:rw
+      # Override: remove worktree mounts (not applicable to Galaxy direct clones)
+      # Galaxy repos are direct clones, not worktrees pointing to bare repos
+      - ${WORKSPACE_PATH}/tt-metal:${WORKSPACE_PATH}/tt-metal:rw
+      - ${WORKSPACE_PATH}/vllm:${WORKSPACE_PATH}/vllm:rw
+      # Standard caches
+      - /dev/hugepages-1G:/dev/hugepages-1G
+      - ${HOME}/.cache/huggingface:/cache/huggingface
+      - ${HOME}/.cache/tt-model-cache:/tt-metal/model_cache
+      - ${HOME}/.cache/ttnn:/root/.cache/ttnn
+      - ${HOME}/.cache/tt-metal-cache:/root/.cache/tt-metal-cache
+      # Persist the python venv across container recreates
+      - vllm-tt-venv:/opt/venv
+      # Persist tt-metal build artifacts
+      - tt-metal-build:/tt-metal/build
