@@ -287,13 +287,58 @@ Five roles:
 
 | Role | Agent Name | What It Does | What It NEVER Does |
 |------|-----------|-------------|-------------------|
-| **Team Lead** | `team-lead` | Delegates, coordinates, evaluates results | Edit files, run docker, run benchmarks |
-| **Architect** | `architect` | Research via Codex, design optimizations | Edit files, run docker, run benchmarks |
-| **Implementer** | `implementer` | Edit code, restart containers, benchmark | Design optimizations, make architectural decisions, use Codex to implement code |
+| **Team Lead** | `team-lead` | Delegates, coordinates, evaluates results, Gemini inline analysis | Edit files, run docker, run benchmarks |
+| **Architect** | `architect` | Gemini deep analysis + Codex background verification, design optimizations | Edit files, run docker, run benchmarks |
+| **Implementer** | `implementer` | Edit code, restart containers, benchmark | Design optimizations, make architectural decisions |
 | **Researcher** | `<topic>-researcher` | Deep-dive code/papers, write detailed research docs | Edit code, run docker. READ-ONLY. Always opus 4.6. |
-| **Perf-Researcher** | `perf-researcher` | Synthesize ALL research into perf projections (~hourly) | Edit code, run docker. Reads all docs, uses Codex to validate. |
+| **Codex-Verifier** | `codex-verifier` | Background Codex verification of findings | Edit code, run docker. Background only. |
 
-**ALL researchers MUST write detailed findings to `plan/glm47_flash/small_wormhole/<topic>.md` — not just messages.**
+**ALL researchers MUST write detailed findings to `plan/<model>/<device>/<topic>.md` — not just messages.**
+
+### CRITICAL: AI Analysis Workflow (MANDATORY)
+
+**Every technical finding MUST be verified through the two-tool pipeline before implementation.**
+
+#### Primary Analysis: Gemini 3.1 Pro Preview (INLINE)
+- Tool: `mcp__gemini-cli__ask-gemini` with `model="gemini-3.1-pro-preview"`
+- Used BY: architect (primary), team lead (quick checks), researchers
+- Used FOR: Deep code analysis, bug root-cause analysis, architecture review, design validation
+- Use `@filepath` syntax to include source files in prompts
+- **This is the PRIMARY thinking tool** — use for every non-trivial technical question
+
+#### Verification: Codex (BACKGROUND AGENTS ONLY)
+- Tool: `mcp__codex-cli__codex` with `model="gpt-5.2"`
+- `cwd` MUST match active workspace (e.g., `ws/glm47_reap_268b_galaxy_wormhole`)
+- Used BY: background agents spawned via `Task(run_in_background=True)`
+- Used FOR: Cross-referencing findings against codebase, validating assumptions, checking reference implementations
+- **NEVER run Codex inline on the main thread** — always spawn a background agent
+
+#### The Verification Loop
+```
+1. Gemini analyzes the problem (inline, on architect or team-lead thread)
+2. Background Codex agent verifies findings against codebase
+3. Both agree → proceed to implementation task
+4. Disagreement → deeper investigation before proceeding
+5. NO implementation without BOTH Gemini analysis AND Codex verification
+```
+
+#### Quick Examples
+```python
+# Team lead or architect: inline Gemini analysis
+mcp__gemini-cli__ask-gemini(
+    model="gemini-3.1-pro-preview",
+    prompt="@models/demos/glm4_moe/tt/model_tt.py Analyze the trace replay race condition at line 818..."
+)
+
+# Then: background Codex verification
+Task(
+    subagent_type="general-purpose",
+    name="codex-verifier",
+    run_in_background=True,
+    prompt="Use mcp__codex-cli__codex with model='gpt-5.2', cwd='...' to verify: "
+           "[finding from Gemini]. Search for execute_trace patterns. Report via SendMessage."
+)
+```
 
 ### CRITICAL: Team Lead Delegation Rule
 
@@ -307,42 +352,50 @@ The team lead **ONLY**:
 - Creates teams and tasks
 - Sends instructions to architect/implementer via `SendMessage`
 - Reads files and results to understand state
-- Updates `perf-opt.md` with findings (the ONE write exception)
-- **CRITICAL:** Updates `plan/glm47_flash/small_wormhole/resume.md` at each step, especially before actions that might crash the device, so that state is persisted for easy resumption.
+- Uses Gemini inline for quick analysis (this is NOT editing, it's thinking)
+- Updates `perf-opt.md` and `resume.md` with findings (the write exceptions)
+- **CRITICAL:** Updates `resume.md` at each step, especially before risky operations
 
-**If you are the team lead and about to edit a file or run docker: STOP.
+**If you are the team lead and about to edit a code file or run docker: STOP.
 Send the instruction to the implementer instead.**
 
-### CRITICAL: Implementer Codex Rule
+### CRITICAL: Implementer Rules
 
-Implementers **may use Codex for advice only** (understanding APIs, debugging errors, asking
-"how does X work?"). Implementers **MUST NOT** use Codex to generate or implement code.
-Codex-driven implementation is the architect's job — implementers write code directly.
+- Implementers **may use Gemini for understanding APIs/debugging** but MUST NOT use it to generate implementation code
+- Implementers **may use Codex for advice only** (understanding APIs, debugging errors)
+- Implementers write code directly based on architect's design
+- ONE implementer at a time — never spawn two (they corrupt code/containers)
 
 ### Key Rules
 
 1. **ONE implementer at a time** -- never spawn two (they corrupt code/containers)
-2. **Always consult Codex** (`mcp__codex-cli__codex` with model="gpt-5.2") at every architectural decision (architect only)
-3. **Feature-flag everything** -- new optimizations behind env vars with safe defaults
-4. **Work in worktrees** -- all changes in `ws/glm47_flash_small_wormhole/`, never in main `docker_tt/`
-5. **Record everything** -- benchmark results go to `plan/glm47_flash/small_wormhole/perf-opt.md`
-6. **Architect is long-lived** (keeps context), implementer is ephemeral (per-task)
+2. **Gemini INLINE for analysis** -- `mcp__gemini-cli__ask-gemini` with `model="gemini-3.1-pro-preview"`
+3. **Codex in BACKGROUND for verification** -- `mcp__codex-cli__codex` with `model="gpt-5.2"`, always via `Task(run_in_background=True)`
+4. **NO implementation without dual verification** -- Gemini analysis + Codex cross-check
+5. **Feature-flag everything** -- new optimizations behind env vars with safe defaults
+6. **Work in worktrees** -- all changes in `ws/<workspace>/`, never in main repos
+7. **Record everything** -- benchmark results go to `plan/<model>/<device>/perf-opt.md`
+8. **Architect is long-lived** (keeps context), implementer is ephemeral (per-task)
 
 ### The Loop
 
 ```
-Team Lead ──(design request)──> Architect
-Architect ──(analysis)────────> Team Lead
-Team Lead ──(task)────────────> Implementer
-Implementer ──(results)───────> Team Lead
-Team Lead ──(results)─────────> Architect
+Team Lead ──(Gemini analysis)──> understands problem
+Team Lead ──(design request)───> Architect
+Architect ──(Gemini deep dive)─> analysis
+Architect ──(spawn Codex bg)───> verification
+Codex-Verifier ──(confirms)────> Architect
+Architect ──(verified proposal)> Team Lead
+Team Lead ──(task)─────────────> Implementer
+Implementer ──(results)────────> Team Lead
+Team Lead ──(results)──────────> Architect
 (repeat)
 ```
 
 ### Quick Launch
 
 ```python
-TeamCreate(team_name="glm-perf-sprint-N", description="GLM-4.7-Flash perf optimization")
+TeamCreate(team_name="glm-perf-sprint-N", description="GLM-4.7 perf optimization")
 # See plan/glm47_flash/_global/team-structure.md for prompt templates and full details
 ```
 
