@@ -36,12 +36,17 @@ services:
       - BUILD_JOBS=${BUILD_JOBS:-16}
       # Dev-specific: skip build if already done
       - SKIP_TT_METAL_BUILD=${SKIP_TT_METAL_BUILD:-0}
+      - TT_LLAMA_TEXT_VER=${TT_LLAMA_TEXT_VER:-tt_transformers}
+      - OVERRIDE_TT_CONFIG=${OVERRIDE_TT_CONFIG:-}
+      - VLLM_ENGINE_ITERATION_TIMEOUT_S=${VLLM_ENGINE_ITERATION_TIMEOUT_S:-}
+      - LOGURU_LEVEL=${LOGURU_LEVEL:-INFO}
     command:
       - --max-model-len=${MAX_MODEL_LEN:-32768}
       - --max-num-seqs=${MAX_NUM_SEQS:-32}
       - --block-size=64
       - --port=8088
       - --enable-prefix-caching
+      - --override-tt-config=${OVERRIDE_TT_CONFIG:-{}}
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8088/health"]
       interval: 30s

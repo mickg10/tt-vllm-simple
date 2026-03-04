@@ -1,0 +1,18 @@
+# Galaxy compose override
+#
+# Use with: -f dev/docker-compose.yml -f dev/docker-compose.galaxy.yml
+#
+# On Galaxy machines the repos are direct git clones (not worktree bare-repo
+# mounts), so volume paths match the standard layout.
+
+services:
+  vllm-tt:
+    volumes:
+      - ${WORKSPACE_PATH}/tt-metal:/tt-metal:rw
+      - ${WORKSPACE_PATH}/vllm:/vllm:rw
+      - /dev/hugepages-1G:/dev/hugepages-1G
+      - ${HOME}/.cache/huggingface:/cache/huggingface
+      - ${HOME}/.cache/tt-model-cache:/tt-metal/model_cache
+      - ${HOME}/.cache/ttnn:/root/.cache/ttnn
+      - ${HOME}/.cache/tt-metal-cache:/root/.cache/tt-metal-cache
+      - tt-metal-build:/tt-metal/build
