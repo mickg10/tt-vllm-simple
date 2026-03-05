@@ -116,14 +116,20 @@ services:
           echo ""
         fi
 
-        # ---- System health test (C++ binary) ----
+        # ---- System health test (C++ binary — build if needed) ----
         echo "--- System health test ---"
-        if [ -x /tt-metal/build/tests/tt_metal/tt_fabric/system_health/test_system_health ]; then
+        HEALTH_BIN=/tt-metal/build_Release/test/tt_metal/tt_fabric/test_system_health
+        if [ ! -x "$$HEALTH_BIN" ]; then
+          echo "Building test_system_health..."
+          cd /tt-metal && cmake -B build_Release -DTT_METAL_BUILD_TESTS=ON 2>&1 | tail -3
+          cmake --build build_Release --target test_system_health -j$$(nproc) 2>&1 | tail -5
+        fi
+        if [ -x "$$HEALTH_BIN" ]; then
           CLUSTER_TYPE="GALAXY"
           [ "$${MESH_DEVICE}" = "T3K" ] && CLUSTER_TYPE="T3K"
-          /tt-metal/build/tests/tt_metal/tt_fabric/system_health/test_system_health --cluster-type $$CLUSTER_TYPE 2>&1 || true
+          $$HEALTH_BIN --cluster-type $$CLUSTER_TYPE 2>&1 || true
         else
-          echo "system_health binary not compiled (C++ build required)"
+          echo "ERROR: Failed to build test_system_health"
         fi
         echo ""
 
