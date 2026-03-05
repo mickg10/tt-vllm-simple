@@ -358,20 +358,20 @@ diagnostics-device:
 	-docker compose --env-file $(DEVICE_ENV) -f dev/docker-compose.yml $(DEVICE_COMPOSE_EXTRA) -p $(DEVICE_PROJECT) down 2>/dev/null
 	-docker ps -q --filter "name=vllm-tt" | xargs -r docker stop 2>/dev/null
 	@echo "Clearing stale UMD device locks..."
-	-sudo rm -f /dev/shm/TT_UMD_LOCK.* 2>/dev/null || rm -f /dev/shm/TT_UMD_LOCK.* 2>/dev/null || true
+	-rm -f /dev/shm/TT_UMD_LOCK.* 2>/dev/null || true
 	@echo ""
 	@echo "Step 2/4: Resetting devices (clean state)..."
 	-tt-smi -glx_reset 2>/dev/null || tt-smi -r 2>/dev/null || echo "WARNING: Device reset not available"
-	-sudo rm -f /dev/shm/TT_UMD_LOCK.* 2>/dev/null || true
+	-rm -f /dev/shm/TT_UMD_LOCK.* 2>/dev/null || true
 	@echo ""
 	@echo "Step 3/4: Running diagnostics (Metal + Inspector + triage)..."
 	docker compose --env-file $(DEVICE_ENV) -f dev/docker-compose.yml $(DEVICE_COMPOSE_EXTRA) -f dev/docker-compose.diagnostics.yml \
 		-p $(DEVICE_PROJECT) run --rm vllm-tt
 	@echo ""
 	@echo "Step 4/4: Resetting devices (clean state for next run)..."
-	-sudo rm -f /dev/shm/TT_UMD_LOCK.* 2>/dev/null || rm -f /dev/shm/TT_UMD_LOCK.* 2>/dev/null || true
+	-rm -f /dev/shm/TT_UMD_LOCK.* 2>/dev/null || true
 	-tt-smi -glx_reset 2>/dev/null || tt-smi -r 2>/dev/null || echo "WARNING: Device reset not available"
-	-sudo rm -f /dev/shm/TT_UMD_LOCK.* 2>/dev/null || true
+	-rm -f /dev/shm/TT_UMD_LOCK.* 2>/dev/null || true
 	@echo ""
 	@echo "=== Diagnostics complete. Devices reset. ==="
 	@echo "Run 'make run-device' to start vLLM."

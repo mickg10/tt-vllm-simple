@@ -157,14 +157,13 @@ if [ "$MODE" = "diagnostics" ]; then
     log "Step 3: Stopping any running vllm-tt containers..."
     $COMPOSE_BASE down 2>/dev/null || true
     docker ps -q --filter "name=vllm-tt" | xargs -r docker stop 2>/dev/null || true
-    sudo rm -f /dev/shm/TT_UMD_LOCK.* 2>/dev/null || \
-        rm -f /dev/shm/TT_UMD_LOCK.* 2>/dev/null || true
+    rm -f /dev/shm/TT_UMD_LOCK.* 2>/dev/null || true
 
     log ""
     log "Step 4: Resetting devices..."
     tt-smi -glx_reset 2>/dev/null || tt-smi -r 2>/dev/null || \
         log "WARNING: Device reset not available"
-    sudo rm -f /dev/shm/TT_UMD_LOCK.* 2>/dev/null || true
+    rm -f /dev/shm/TT_UMD_LOCK.* 2>/dev/null || true
 
     log ""
     log "Step 5: Running diagnostics (foreground)..."
@@ -172,10 +171,9 @@ if [ "$MODE" = "diagnostics" ]; then
 
     log ""
     log "Step 6: Resetting devices (clean state)..."
-    sudo rm -f /dev/shm/TT_UMD_LOCK.* 2>/dev/null || \
-        rm -f /dev/shm/TT_UMD_LOCK.* 2>/dev/null || true
+    rm -f /dev/shm/TT_UMD_LOCK.* 2>/dev/null || true
     tt-smi -glx_reset 2>/dev/null || tt-smi -r 2>/dev/null || true
-    sudo rm -f /dev/shm/TT_UMD_LOCK.* 2>/dev/null || true
+    rm -f /dev/shm/TT_UMD_LOCK.* 2>/dev/null || true
 
     log ""
     log "=== Diagnostics complete. Devices reset. ==="
