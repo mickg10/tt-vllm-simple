@@ -345,68 +345,9 @@ verify-device:
 		'    sys.exit(1)' \
 	)" || { echo "WARNING: Verification failed — check 'make logs-device'"; exit 1; }
 
-DIAG_SCRIPT = \
-	echo "--- Installing diagnostics dependencies (if needed) ---"; \
-	python -c "import ttexalens" 2>/dev/null || \
-		( cd /tt-metal && bash scripts/install_debugger.sh 2>&1 | tail -3 ); \
-	python -c "import capnp" 2>/dev/null || \
-		( pip install -q -r /tt-metal/tools/triage/requirements.txt 2>&1 | tail -3 ); \
-	echo ""; \
-	echo "--- tt-smi device listing ---"; \
-	tt-smi -ls 2>/dev/null || echo "tt-smi not available"; \
-	echo ""; \
-	echo "--- Ethernet link status ---"; \
-	cd /tt-metal && python tools/tt-triage.py --run=check_eth_status 2>&1 || \
-		echo "check_eth_status FAILED"; \
-	echo ""; \
-	echo "--- NOC status ---"; \
-	cd /tt-metal && python tools/tt-triage.py --run=check_noc_status 2>&1 || \
-		echo "check_noc_status FAILED"; \
-	echo ""; \
-	echo "--- System health test ---"; \
-	if [ -x /tt-metal/build/tests/tt_metal/tt_fabric/system_health/test_system_health ]; then \
-		/tt-metal/build/tests/tt_metal/tt_fabric/system_health/test_system_health --cluster-type GALAXY 2>&1 || true; \
-	else \
-		echo "system_health test not compiled (C++ build required)"; \
-	fi; \
-	echo ""; \
-	echo "--- Available deep-dive tools ---"; \
-	[ -f /tt-metal/tt_metal/fabric/debug/fabric_erisc_dumper.py ] && \
-		echo "  fabric_erisc_dumper: python /tt-metal/tt_metal/fabric/debug/fabric_erisc_dumper.py [--fabric-streams] [--poll]"; \
-	[ -f /tt-metal/tests/tt_metal/microbenchmarks/ethernet/test_all_ethernet_links_bandwidth.py ] && \
-		echo "  eth bandwidth:      python /tt-metal/tests/tt_metal/microbenchmarks/ethernet/test_all_ethernet_links_bandwidth.py"; \
-	[ -f /tt-metal/tests/tt_metal/microbenchmarks/ethernet/test_all_ethernet_links_latency.py ] && \
-		echo "  eth latency:        python /tt-metal/tests/tt_metal/microbenchmarks/ethernet/test_all_ethernet_links_latency.py"; \
-	true
-
 diagnostics-device:
-	@echo "============================================"
-	@echo "TT Device Diagnostics"
-	@echo "============================================"
-	@# Find a running vllm-tt container: try DEVICE_CONTAINER, then common names
-	@CONTAINER=""; \
-	for name in $(DEVICE_CONTAINER) dev-vllm-tt-1; do \
-		if docker inspect $$name >/dev/null 2>&1; then \
-			CONTAINER=$$name; \
-			break; \
-		fi; \
-	done; \
-	if [ -n "$$CONTAINER" ]; then \
-		echo "Using running container: $$CONTAINER"; \
-		echo ""; \
-		docker exec $$CONTAINER bash -lc '$(DIAG_SCRIPT)'; \
-	else \
-		echo "No running vllm-tt container found."; \
-		echo "Starting one-off diagnostics container..."; \
-		echo ""; \
-		docker compose --env-file $(DEVICE_ENV) -f dev/docker-compose.yml $(DEVICE_COMPOSE_EXTRA) \
-			-p $(DEVICE_PROJECT) run --rm --entrypoint bash \
-			vllm-tt -lc '$(DIAG_SCRIPT)'; \
-	fi
-	@echo ""
-	@echo "============================================"
-	@echo "Diagnostics complete"
-	@echo "============================================"
+	docker compose --env-file $(DEVICE_ENV) -f dev/docker-compose.yml $(DEVICE_COMPOSE_EXTRA) -f dev/docker-compose.diagnostics.yml \
+		-p $(DEVICE_PROJECT) run --rm vllm-tt
 
 # Shortcuts — Galaxy Wormhole (default config)
 run-galaxy: ; $(MAKE) run-device
