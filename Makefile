@@ -346,8 +346,20 @@ verify-device:
 	)" || { echo "WARNING: Verification failed — check 'make logs-device'"; exit 1; }
 
 diagnostics-device:
+	@echo "Stopping ALL vllm-tt containers to free devices..."
+	@# Stop containers from both default (dev) and named project
+	-docker compose --env-file $(DEVICE_ENV) -f dev/docker-compose.yml $(DEVICE_COMPOSE_EXTRA) down 2>/dev/null
+	-docker compose --env-file $(DEVICE_ENV) -f dev/docker-compose.yml $(DEVICE_COMPOSE_EXTRA) -p $(DEVICE_PROJECT) down 2>/dev/null
+	@# Also force-stop any remaining vllm-tt container by name
+	-docker ps -q --filter "name=vllm-tt" | xargs -r docker stop 2>/dev/null
+	@echo "Clearing stale UMD device locks..."
+	-sudo rm -f /dev/shm/TT_UMD_LOCK.* 2>/dev/null || rm -f /dev/shm/TT_UMD_LOCK.* 2>/dev/null || true
+	@sleep 2
+	@echo "Running diagnostics (Metal + Inspector + triage)..."
 	docker compose --env-file $(DEVICE_ENV) -f dev/docker-compose.yml $(DEVICE_COMPOSE_EXTRA) -f dev/docker-compose.diagnostics.yml \
 		-p $(DEVICE_PROJECT) run --rm vllm-tt
+	@echo ""
+	@echo "Done. Restart vLLM with: make run-device"
 
 # Shortcuts — Galaxy Wormhole (default config)
 run-galaxy: ; $(MAKE) run-device
