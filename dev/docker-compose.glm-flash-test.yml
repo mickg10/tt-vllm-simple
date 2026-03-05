@@ -1,0 +1,28 @@
+# GLM Flash worktree overrides
+# Uses separate build/venv volumes and ws-glm-flash worktree paths
+services:
+  vllm-tt:
+    volumes:
+      # GLM Flash worktree sources
+      - /home/user/src_docker/ws-glm-flash/tt-metal:/tt-metal:rw
+      - /home/user/src_docker/ws-glm-flash/vllm:/vllm:rw
+      # Git worktree support - mount parent .git dir so git describe works
+      - /home/user/src_docker/ws-glm-flash/tt-metal:/home/user/src_docker/ws-glm-flash/tt-metal:rw
+      - /home/user/src_docker/ws-glm-flash/vllm:/home/user/src_docker/ws-glm-flash/vllm:rw
+      - /home/user/src_docker/tt-metal/.git:/home/user/src_docker/tt-metal/.git:ro
+      - /home/user/src_docker/vllm/.git:/home/user/src_docker/vllm/.git:ro
+      # Standard caches
+      - /dev/hugepages-1G:/dev/hugepages-1G
+      - ${HOME}/.cache/huggingface:/cache/huggingface
+      - ${HOME}/.cache/tt-model-cache:/tt-metal/model_cache
+      - ${HOME}/.cache/ttnn:/root/.cache/ttnn
+      - ${HOME}/.cache/tt-metal-cache:/root/.cache/tt-metal-cache
+      # Separate volumes for GLM Flash testing
+      - glm-flash-venv:/opt/venv
+      - glm-flash-build:/tt-metal/build
+
+volumes:
+  glm-flash-build:
+    name: glm-flash-build-cache
+  glm-flash-venv:
+    name: glm-flash-venv-cache
