@@ -331,15 +331,15 @@ verify-device:
 		'import sys, json' \
 		'try:' \
 		'    data = json.load(sys.stdin)' \
-		'    text = data[\"choices\"][0][\"text\"]' \
-		'    print(\"Response:\", text)' \
-		'    assert \"Paris\" in text or len(text.split()) > 2, \"Output may be garbled\"' \
-		'    print(\"Output looks coherent!\")' \
+		'    text = data["choices"][0]["text"]' \
+		'    print("Response:", text)' \
+		'    assert "Paris" in text or len(text.split()) > 2, "Output may be garbled"' \
+		'    print("Output looks coherent!")' \
 		'except (json.JSONDecodeError, KeyError, IndexError) as e:' \
-		'    print(f\"ERROR: Unexpected API response format: {e}\", file=sys.stderr)' \
+		'    print(f"ERROR: Unexpected API response format: {e}", file=sys.stderr)' \
 		'    sys.exit(1)' \
 		'except AssertionError as e:' \
-		'    print(f\"WARNING: {e}\", file=sys.stderr)' \
+		'    print(f"WARNING: {e}", file=sys.stderr)' \
 		'    sys.exit(1)' \
 	)" || { echo "WARNING: Verification failed — check 'make logs-device'"; exit 1; }
 
