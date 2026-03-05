@@ -6,6 +6,7 @@ SHELL := /bin/bash
 .PHONY: help build-prebuilt build-source build-dev test-prebuilt test-source test-dev \
         run-prebuilt run-source run-dev stop-prebuilt stop-source stop-dev \
         build-device run-device stop-device logs-device wait-device verify-device \
+        diagnostics-device diagnostics-galaxy \
         run-galaxy stop-galaxy logs-galaxy wait-galaxy verify-galaxy \
         logs-prebuilt logs-source logs-dev clean reset-devices \
         workspace-init workspace-create workspace-list workspace-delete workspace-status workspace-sync
@@ -62,6 +63,7 @@ help:
 	@echo "  make logs-device        Follow device logs"
 	@echo "  make wait-device        Wait for container to become healthy"
 	@echo "  make verify-device      Verify coherent output"
+	@echo "  make diagnostics-device Run tt-metal diagnostics (eth status, NOC, triage)"
 	@echo ""
 	@echo "  Shortcuts:"
 	@echo "  make run-galaxy         = run-device with Galaxy Wormhole config"
@@ -343,12 +345,91 @@ verify-device:
 		'    sys.exit(1)' \
 	)" || { echo "WARNING: Verification failed — check 'make logs-device'"; exit 1; }
 
+diagnostics-device:
+	@echo "============================================"
+	@echo "TT Device Diagnostics"
+	@echo "============================================"
+	@# Try exec into running container first, fall back to one-off run
+	@if docker inspect $(DEVICE_CONTAINER) >/dev/null 2>&1; then \
+		echo "Using running container: $(DEVICE_CONTAINER)"; \
+		echo ""; \
+		echo "--- tt-smi device listing ---"; \
+		docker exec $(DEVICE_CONTAINER) bash -c 'tt-smi -ls 2>/dev/null || echo "tt-smi not available in container"'; \
+		echo ""; \
+		echo "--- Ethernet link status ---"; \
+		docker exec $(DEVICE_CONTAINER) bash -c '\
+			cd /tt-metal && \
+			if [ -f tools/tt-triage.py ]; then \
+				python tools/tt-triage.py --run=check_eth_status 2>&1 || \
+				echo "tt-triage check_eth_status failed (may need ttexalens)"; \
+			else \
+				echo "tt-triage not found at /tt-metal/tools/tt-triage.py"; \
+			fi'; \
+		echo ""; \
+		echo "--- NOC status ---"; \
+		docker exec $(DEVICE_CONTAINER) bash -c '\
+			cd /tt-metal && \
+			if [ -f tools/tt-triage.py ]; then \
+				python tools/tt-triage.py --run=check_noc_status 2>&1 || \
+				echo "tt-triage check_noc_status failed"; \
+			fi'; \
+		echo ""; \
+		echo "--- System health test ---"; \
+		docker exec $(DEVICE_CONTAINER) bash -c '\
+			if [ -x /tt-metal/build/tests/tt_metal/tt_fabric/system_health/test_system_health ]; then \
+				/tt-metal/build/tests/tt_metal/tt_fabric/system_health/test_system_health --cluster-type GALAXY 2>&1 || true; \
+			else \
+				echo "system_health test not compiled (run C++ build first)"; \
+			fi'; \
+		echo ""; \
+		echo "--- DRAM bandwidth ---"; \
+		docker exec $(DEVICE_CONTAINER) bash -c '\
+			if [ -f /tt-metal/tests/tt_metal/microbenchmarks/ethernet/test_all_ethernet_links_bandwidth.py ]; then \
+				echo "Available: python /tt-metal/tests/tt_metal/microbenchmarks/ethernet/test_all_ethernet_links_bandwidth.py"; \
+			fi; \
+			if [ -f /tt-metal/tt_metal/fabric/debug/fabric_erisc_dumper.py ]; then \
+				echo "Available: python /tt-metal/tt_metal/fabric/debug/fabric_erisc_dumper.py [--fabric-streams] [--poll]"; \
+			fi'; \
+	else \
+		echo "Container $(DEVICE_CONTAINER) not running."; \
+		echo "Starting one-off diagnostics container..."; \
+		echo ""; \
+		docker compose --env-file $(DEVICE_ENV) -f dev/docker-compose.yml $(DEVICE_COMPOSE_EXTRA) \
+			-p $(DEVICE_PROJECT) run --rm --entrypoint bash \
+			-e SKIP_TT_METAL_BUILD=1 \
+			vllm-tt -lc '\
+				echo "--- tt-smi device listing ---"; \
+				tt-smi -ls 2>/dev/null || echo "tt-smi not available"; \
+				echo ""; \
+				echo "--- Ethernet link status ---"; \
+				cd /tt-metal 2>/dev/null && \
+				if [ -f tools/tt-triage.py ]; then \
+					python tools/tt-triage.py --run=check_eth_status 2>&1 || \
+					echo "tt-triage failed (may need ttexalens)"; \
+				else \
+					echo "tt-metal not mounted or tt-triage not found"; \
+				fi; \
+				echo ""; \
+				echo "--- System health test ---"; \
+				if [ -x /tt-metal/build/tests/tt_metal/tt_fabric/system_health/test_system_health ]; then \
+					/tt-metal/build/tests/tt_metal/tt_fabric/system_health/test_system_health --cluster-type GALAXY 2>&1 || true; \
+				else \
+					echo "system_health test not compiled"; \
+				fi; \
+			'; \
+	fi
+	@echo ""
+	@echo "============================================"
+	@echo "Diagnostics complete"
+	@echo "============================================"
+
 # Shortcuts — Galaxy Wormhole (default config)
 run-galaxy: ; $(MAKE) run-device
 stop-galaxy: ; $(MAKE) stop-device
 logs-galaxy: ; $(MAKE) logs-device
 wait-galaxy: ; $(MAKE) wait-device
 verify-galaxy: ; $(MAKE) verify-device
+diagnostics-galaxy: ; $(MAKE) diagnostics-device
 
 #==============================================================================
 # Utility Targets
