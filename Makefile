@@ -345,78 +345,63 @@ verify-device:
 		'    sys.exit(1)' \
 	)" || { echo "WARNING: Verification failed — check 'make logs-device'"; exit 1; }
 
+DIAG_SCRIPT = \
+	echo "--- Installing diagnostics dependencies (if needed) ---"; \
+	python -c "import ttexalens" 2>/dev/null || \
+		( cd /tt-metal && bash scripts/install_debugger.sh 2>&1 | tail -3 ); \
+	python -c "import capnp" 2>/dev/null || \
+		( pip install -q -r /tt-metal/tools/triage/requirements.txt 2>&1 | tail -3 ); \
+	echo ""; \
+	echo "--- tt-smi device listing ---"; \
+	tt-smi -ls 2>/dev/null || echo "tt-smi not available"; \
+	echo ""; \
+	echo "--- Ethernet link status ---"; \
+	cd /tt-metal && python tools/tt-triage.py --run=check_eth_status 2>&1 || \
+		echo "check_eth_status FAILED"; \
+	echo ""; \
+	echo "--- NOC status ---"; \
+	cd /tt-metal && python tools/tt-triage.py --run=check_noc_status 2>&1 || \
+		echo "check_noc_status FAILED"; \
+	echo ""; \
+	echo "--- System health test ---"; \
+	if [ -x /tt-metal/build/tests/tt_metal/tt_fabric/system_health/test_system_health ]; then \
+		/tt-metal/build/tests/tt_metal/tt_fabric/system_health/test_system_health --cluster-type GALAXY 2>&1 || true; \
+	else \
+		echo "system_health test not compiled (C++ build required)"; \
+	fi; \
+	echo ""; \
+	echo "--- Available deep-dive tools ---"; \
+	[ -f /tt-metal/tt_metal/fabric/debug/fabric_erisc_dumper.py ] && \
+		echo "  fabric_erisc_dumper: python /tt-metal/tt_metal/fabric/debug/fabric_erisc_dumper.py [--fabric-streams] [--poll]"; \
+	[ -f /tt-metal/tests/tt_metal/microbenchmarks/ethernet/test_all_ethernet_links_bandwidth.py ] && \
+		echo "  eth bandwidth:      python /tt-metal/tests/tt_metal/microbenchmarks/ethernet/test_all_ethernet_links_bandwidth.py"; \
+	[ -f /tt-metal/tests/tt_metal/microbenchmarks/ethernet/test_all_ethernet_links_latency.py ] && \
+		echo "  eth latency:        python /tt-metal/tests/tt_metal/microbenchmarks/ethernet/test_all_ethernet_links_latency.py"; \
+	true
+
 diagnostics-device:
 	@echo "============================================"
 	@echo "TT Device Diagnostics"
 	@echo "============================================"
-	@# Try exec into running container first, fall back to one-off run
-	@if docker inspect $(DEVICE_CONTAINER) >/dev/null 2>&1; then \
-		echo "Using running container: $(DEVICE_CONTAINER)"; \
+	@# Find a running vllm-tt container: try DEVICE_CONTAINER, then common names
+	@CONTAINER=""; \
+	for name in $(DEVICE_CONTAINER) dev-vllm-tt-1; do \
+		if docker inspect $$name >/dev/null 2>&1; then \
+			CONTAINER=$$name; \
+			break; \
+		fi; \
+	done; \
+	if [ -n "$$CONTAINER" ]; then \
+		echo "Using running container: $$CONTAINER"; \
 		echo ""; \
-		echo "--- tt-smi device listing ---"; \
-		docker exec $(DEVICE_CONTAINER) bash -c 'tt-smi -ls 2>/dev/null || echo "tt-smi not available in container"'; \
-		echo ""; \
-		echo "--- Ethernet link status ---"; \
-		docker exec $(DEVICE_CONTAINER) bash -c '\
-			cd /tt-metal && \
-			if [ -f tools/tt-triage.py ]; then \
-				python tools/tt-triage.py --run=check_eth_status 2>&1 || \
-				echo "tt-triage check_eth_status failed (may need ttexalens)"; \
-			else \
-				echo "tt-triage not found at /tt-metal/tools/tt-triage.py"; \
-			fi'; \
-		echo ""; \
-		echo "--- NOC status ---"; \
-		docker exec $(DEVICE_CONTAINER) bash -c '\
-			cd /tt-metal && \
-			if [ -f tools/tt-triage.py ]; then \
-				python tools/tt-triage.py --run=check_noc_status 2>&1 || \
-				echo "tt-triage check_noc_status failed"; \
-			fi'; \
-		echo ""; \
-		echo "--- System health test ---"; \
-		docker exec $(DEVICE_CONTAINER) bash -c '\
-			if [ -x /tt-metal/build/tests/tt_metal/tt_fabric/system_health/test_system_health ]; then \
-				/tt-metal/build/tests/tt_metal/tt_fabric/system_health/test_system_health --cluster-type GALAXY 2>&1 || true; \
-			else \
-				echo "system_health test not compiled (run C++ build first)"; \
-			fi'; \
-		echo ""; \
-		echo "--- DRAM bandwidth ---"; \
-		docker exec $(DEVICE_CONTAINER) bash -c '\
-			if [ -f /tt-metal/tests/tt_metal/microbenchmarks/ethernet/test_all_ethernet_links_bandwidth.py ]; then \
-				echo "Available: python /tt-metal/tests/tt_metal/microbenchmarks/ethernet/test_all_ethernet_links_bandwidth.py"; \
-			fi; \
-			if [ -f /tt-metal/tt_metal/fabric/debug/fabric_erisc_dumper.py ]; then \
-				echo "Available: python /tt-metal/tt_metal/fabric/debug/fabric_erisc_dumper.py [--fabric-streams] [--poll]"; \
-			fi'; \
+		docker exec $$CONTAINER bash -lc '$(DIAG_SCRIPT)'; \
 	else \
-		echo "Container $(DEVICE_CONTAINER) not running."; \
+		echo "No running vllm-tt container found."; \
 		echo "Starting one-off diagnostics container..."; \
 		echo ""; \
 		docker compose --env-file $(DEVICE_ENV) -f dev/docker-compose.yml $(DEVICE_COMPOSE_EXTRA) \
 			-p $(DEVICE_PROJECT) run --rm --entrypoint bash \
-			-e SKIP_TT_METAL_BUILD=1 \
-			vllm-tt -lc '\
-				echo "--- tt-smi device listing ---"; \
-				tt-smi -ls 2>/dev/null || echo "tt-smi not available"; \
-				echo ""; \
-				echo "--- Ethernet link status ---"; \
-				cd /tt-metal 2>/dev/null && \
-				if [ -f tools/tt-triage.py ]; then \
-					python tools/tt-triage.py --run=check_eth_status 2>&1 || \
-					echo "tt-triage failed (may need ttexalens)"; \
-				else \
-					echo "tt-metal not mounted or tt-triage not found"; \
-				fi; \
-				echo ""; \
-				echo "--- System health test ---"; \
-				if [ -x /tt-metal/build/tests/tt_metal/tt_fabric/system_health/test_system_health ]; then \
-					/tt-metal/build/tests/tt_metal/tt_fabric/system_health/test_system_health --cluster-type GALAXY 2>&1 || true; \
-				else \
-					echo "system_health test not compiled"; \
-				fi; \
-			'; \
+			vllm-tt -lc '$(DIAG_SCRIPT)'; \
 	fi
 	@echo ""
 	@echo "============================================"
