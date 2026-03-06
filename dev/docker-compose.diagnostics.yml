@@ -27,6 +27,16 @@ services:
         tt-smi -ls 2>/dev/null || echo "tt-smi not available"
         echo ""
 
+        # ---- tt-topology (pip package, may not be installed) ----
+        echo "--- tt-topology ---"
+        if which tt-topology >/dev/null 2>&1; then
+          tt-topology 2>&1 || echo "tt-topology failed"
+        else
+          pip install -q tt-topology 2>&1 | tail -3 && \
+            tt-topology 2>&1 || echo "tt-topology not available"
+        fi
+        echo ""
+
         # ---- Install triage dependencies ----
         echo "--- Installing triage dependencies ---"
         python -c "import ttexalens" 2>/dev/null || \

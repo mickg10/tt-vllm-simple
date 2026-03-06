@@ -1,0 +1,68 @@
+# Interactive shell overlay — bash into container with tt-tools
+#
+# Drops into an interactive bash session inside the vLLM container
+# with full access to tt-metal, ttnn, tt-smi, tt-triage, and other tools.
+# No vLLM server is started.
+#
+# Usage: make shell-device
+# Or:    docker compose --env-file dev/.env.glm47.galaxy \
+#          -f dev/docker-compose.yml -f dev/docker-compose.galaxy.yml \
+#          -f dev/docker-compose.shell.yml run --rm vllm-tt
+services:
+  vllm-tt:
+    volumes:
+      # Mount docker_tt scripts into container
+      - ${WORKSPACE_PATH:-.}/docker_tt/scripts:/docker_tt/scripts:ro
+    stdin_open: true
+    tty: true
+    entrypoint: ["bash", "-lc"]
+    command:
+      - |
+        echo "============================================"
+        echo "  TT Tools Interactive Shell"
+        echo "============================================"
+        echo ""
+        echo "Available tools:"
+        echo "  tt-smi -ls                    Device listing"
+        echo "  tt-smi -glx_reset             Galaxy full device reset"
+        echo "  python /tt-metal/tools/tt-triage.py  Full triage suite"
+        echo "  python -c 'import ttnn'       Verify TTNN available"
+        echo ""
+        echo "Triage scripts (require Metal Inspector):"
+        echo "  python /tt-metal/tools/tt-triage.py --run=check_eth_status --dev=all"
+        echo "  python /tt-metal/tools/tt-triage.py --run=check_noc_status --dev=all"
+        echo "  python /tt-metal/tools/tt-triage.py --run=device_info --dev=all"
+        echo "  python /tt-metal/tools/tt-triage.py --run=device_telemetry --dev=all"
+        echo "  python /tt-metal/tools/tt-triage.py --run=firmware_versions --dev=all"
+        echo ""
+        echo "Standalone diagnostics (no Metal runtime needed):"
+        echo "  python /docker_tt/scripts/eth_diagnostics.py"
+        echo "  python /docker_tt/scripts/eth_diagnostics.py --noc"
+        echo ""
+        echo "Fabric debug tools:"
+        [ -f /tt-metal/tt_metal/fabric/debug/fabric_erisc_dumper.py ] && \
+          echo "  python /tt-metal/tt_metal/fabric/debug/fabric_erisc_dumper.py"
+        [ -f /tt-metal/tests/tt_metal/microbenchmarks/ethernet/test_all_ethernet_links_bandwidth.py ] && \
+          echo "  python /tt-metal/tests/.../test_all_ethernet_links_bandwidth.py"
+        echo ""
+        echo "System health test (needs exclusive device access):"
+        HEALTH_BIN=/tt-metal/build_Release/test/tt_metal/tt_fabric/test_system_health
+        if [ -x "$$HEALTH_BIN" ]; then
+          echo "  $$HEALTH_BIN --cluster-type GALAXY"
+        else
+          echo "  (not built — run: cmake -B build_Release -DTT_METAL_BUILD_TESTS=ON && cmake --build build_Release --target test_system_health -j\$$(nproc))"
+        fi
+        echo ""
+        which tt-topology >/dev/null 2>&1 && echo "  tt-topology             Network topology tool"
+        echo ""
+        echo "Paths:"
+        echo "  /tt-metal               tt-metal source + build"
+        echo "  /vllm                   vLLM source"
+        echo "  /docker_tt/scripts      docker_tt utility scripts"
+        echo ""
+        echo "Type 'exit' to leave the shell."
+        echo "============================================"
+        exec bash -l
+    healthcheck:
+      disable: true
+    restart: "no"

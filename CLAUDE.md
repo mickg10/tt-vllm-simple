@@ -409,23 +409,81 @@ On every session start or context compaction, re-read these files:
 
 - SSH: `ssh user@38.97.6.6 -p 55211`
 - 32 Wormhole chips, MESH_DEVICE=TG, grid 8×4
-- Repos at `/home/user/src_docker/{docker_tt,tt-metal,vllm}` (direct clones, NOT worktrees)
+- **Workspace structure matches local**: `/home/user/src_docker/ws/glm47_flash_galaxy_wormhole/{tt-metal,vllm,docker_tt}`
+- All repos on branch `galaxy_wormhole` (same as local)
 - Env: `dev/.env.glm47.galaxy`, Compose override: `dev/docker-compose.galaxy.yml`
-- Start: `sg docker -c 'docker compose --env-file dev/.env.glm47.galaxy -f dev/docker-compose.yml -f dev/docker-compose.galaxy.yml up -d vllm-tt'`
-- Baseline (bf4, garbled): 5.2 tok/s bs=1, 166 tok/s bs=32 — bf8 rebenchmark pending
+- `WORKSPACE_PATH=/home/user/src_docker/ws/glm47_flash_galaxy_wormhole`
 - Storage is persistent (7TB /home, named Docker volumes)
+- Backup of pre-migration state: `/home/user/src_docker/backup_20260305/`
+- Best results (Run 8): bs=1 8.1 tok/s, bs=32 281.3 tok/s aggregate
+
+#### Galaxy Start/Stop Commands
+
+```bash
+# Start (from Galaxy SSH):
+cd /home/user/src_docker/ws/glm47_flash_galaxy_wormhole/docker_tt && \
+sg docker -c 'docker compose --env-file dev/.env.glm47.galaxy \
+  -f dev/docker-compose.yml -f dev/docker-compose.galaxy.yml up -d vllm-tt'
+
+# Stop:
+cd /home/user/src_docker/ws/glm47_flash_galaxy_wormhole/docker_tt && \
+sg docker -c 'docker compose --env-file dev/.env.glm47.galaxy \
+  -f dev/docker-compose.yml -f dev/docker-compose.galaxy.yml down'
+
+# Health check:
+docker inspect --format='{{.State.Health.Status}}' dev-vllm-tt-1
+```
+
+#### Rsync Workflow (Local → Galaxy)
+
+Local workspace is the **source of truth**. Edit locally, rsync to Galaxy, restart.
+
+```bash
+# Sync everything (excluding .git):
+rsync -avz --exclude='.git' -e 'ssh -p 55211' \
+  ws/glm47_flash_galaxy_wormhole/ \
+  user@38.97.6.6:/home/user/src_docker/ws/glm47_flash_galaxy_wormhole/
+
+# Sync single file (e.g., decoder_layer_tt.py):
+rsync -avz -e 'ssh -p 55211' \
+  ws/glm47_flash_galaxy_wormhole/tt-metal/models/demos/glm4_moe_lite/tt/decoder_layer_tt.py \
+  user@38.97.6.6:/home/user/src_docker/ws/glm47_flash_galaxy_wormhole/tt-metal/models/demos/glm4_moe_lite/tt/decoder_layer_tt.py
+
+# After rsync, restart container (preserves weight cache):
+ssh -p 55211 user@38.97.6.6 "cd /home/user/src_docker/ws/glm47_flash_galaxy_wormhole/docker_tt && \
+  sg docker -c 'docker compose --env-file dev/.env.glm47.galaxy \
+  -f dev/docker-compose.yml -f dev/docker-compose.galaxy.yml restart vllm-tt'"
+```
+
+**IMPORTANT rsync caveats:**
+- `--exclude='.git'` does NOT transfer submodule state. After branch switch or major sync, run on Galaxy: `cd tt-metal && git submodule update --init tt_metal/third_party/tt_llk tt_metal/third_party/umd`
+- Non-semver git tags (e.g., `glm47_flash_20260211`) break `setuptools_scm`. Delete them on Galaxy.
+- After branch switch, clear kernel cache: `sudo rm -rf /home/user/.cache/tt-metal-cache/*`
+- If env file changes, use `docker compose up -d` (not just `restart`) to pick up new vars.
+
+#### Galaxy Device Recovery
+
+```bash
+# Escalation ladder:
+# 1. Stop container + reset devices:
+ssh -p 55211 user@38.97.6.6 "docker stop dev-vllm-tt-1; /home/user/.local/bin/tt-smi -glx_reset"
+# 2. Clear UMD locks:
+ssh -p 55211 user@38.97.6.6 "sudo rm -f /dev/shm/TT_UMD_LOCK.*"
+# 3. Restart container
+```
 
 ### Key Model Code Entry Points
 
 | File | What |
 |------|------|
-| `ws/glm47_flash_small_wormhole/tt-metal/models/demos/glm4_moe_lite/tt/decoder_layer_tt.py` | Decode + prefill forward pass (~1900 lines) |
-| `ws/glm47_flash_small_wormhole/tt-metal/models/demos/glm4_moe_lite/tt/layer_weights.py` | Weight loading and preparation |
-| `ws/glm47_flash_small_wormhole/tt-metal/models/demos/glm4_moe_lite/tt/generator_vllm.py` | THE vLLM interface file |
-| `ws/glm47_flash_small_wormhole/vllm/vllm/worker/tt_worker.py` | TT device worker (program cache, tracing) |
-| `ws/glm47_flash_small_wormhole/docker_tt/dev/.env.glm47` | All env flags for GLM config |
-| `ws/glm47_flash_small_wormhole/docker_tt/dev/docker-compose.yml` | Container definition and env passthrough |
-| `ws/glm47_flash_small_wormhole/docker_tt/tests/bench_decode.py` | Benchmark script |
+| `ws/glm47_flash_galaxy_wormhole/tt-metal/models/demos/glm4_moe_lite/tt/decoder_layer_tt.py` | Decode + prefill forward pass (~1900 lines) |
+| `ws/glm47_flash_galaxy_wormhole/tt-metal/models/demos/glm4_moe_lite/tt/layer_weights.py` | Weight loading and preparation |
+| `ws/glm47_flash_galaxy_wormhole/tt-metal/models/demos/glm4_moe_lite/tt/generator_vllm.py` | THE vLLM interface file |
+| `ws/glm47_flash_galaxy_wormhole/vllm/vllm/worker/tt_worker.py` | TT device worker (program cache, tracing) |
+| `ws/glm47_flash_galaxy_wormhole/docker_tt/dev/.env.glm47.galaxy` | Galaxy env flags |
+| `ws/glm47_flash_galaxy_wormhole/docker_tt/dev/docker-compose.yml` | Container definition and env passthrough |
+| `ws/glm47_flash_galaxy_wormhole/docker_tt/dev/docker-compose.galaxy.yml` | Galaxy volume overrides |
+| `ws/glm47_flash_galaxy_wormhole/docker_tt/tests/bench_decode.py` | Benchmark script |
 
 ## Upstream Repositories
 

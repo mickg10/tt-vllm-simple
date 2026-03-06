@@ -6,7 +6,7 @@ SHELL := /bin/bash
 .PHONY: help build-prebuilt build-source build-dev test-prebuilt test-source test-dev \
         run-prebuilt run-source run-dev stop-prebuilt stop-source stop-dev \
         build-device run-device stop-device logs-device wait-device verify-device \
-        diagnostics-device diagnostics-galaxy \
+        diagnostics-device diagnostics-galaxy shell-device shell-galaxy \
         run-galaxy stop-galaxy logs-galaxy wait-galaxy verify-galaxy \
         logs-prebuilt logs-source logs-dev clean reset-devices \
         workspace-init workspace-create workspace-list workspace-delete workspace-status workspace-sync
@@ -64,10 +64,12 @@ help:
 	@echo "  make wait-device        Wait for container to become healthy"
 	@echo "  make verify-device      Verify coherent output"
 	@echo "  make diagnostics-device Run tt-metal diagnostics (eth status, NOC, triage)"
+	@echo "  make shell-device       Interactive bash with all tt-tools (no vLLM)"
 	@echo ""
 	@echo "One-command scripts (clone + run):"
 	@echo "  ./scripts/deploy-galaxy.sh                    # clone + deploy vLLM"
 	@echo "  ./scripts/deploy-galaxy.sh --mode diagnostics # clone + diagnostics only"
+	@echo "  ./scripts/deploy-galaxy.sh --mode bash        # clone + interactive shell"
 	@echo ""
 	@echo "  Shortcuts:"
 	@echo "  make run-galaxy         = run-device with Galaxy Wormhole config"
@@ -376,6 +378,12 @@ diagnostics-device:
 	@echo "=== Diagnostics complete. Devices reset. ==="
 	@echo "Run 'make run-device' to start vLLM."
 
+shell-device:
+	@echo "=== TT Tools Interactive Shell ==="
+	@echo ""
+	docker compose --env-file $(DEVICE_ENV) -f dev/docker-compose.yml $(DEVICE_COMPOSE_EXTRA) -f dev/docker-compose.shell.yml \
+		-p $(DEVICE_PROJECT) run --rm vllm-tt
+
 # Shortcuts — Galaxy Wormhole (default config)
 run-galaxy: ; $(MAKE) run-device
 stop-galaxy: ; $(MAKE) stop-device
@@ -383,6 +391,7 @@ logs-galaxy: ; $(MAKE) logs-device
 wait-galaxy: ; $(MAKE) wait-device
 verify-galaxy: ; $(MAKE) verify-device
 diagnostics-galaxy: ; $(MAKE) diagnostics-device
+shell-galaxy: ; $(MAKE) shell-device
 
 #==============================================================================
 # Utility Targets
