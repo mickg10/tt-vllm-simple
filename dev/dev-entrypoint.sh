@@ -47,6 +47,14 @@ validate_sources
 if command -v git &>/dev/null; then
     git config --global --add safe.directory /tt-metal 2>/dev/null || true
     git config --global --add safe.directory /vllm 2>/dev/null || true
+
+    # Shallow clones may lack tags, causing CMake's git describe to fail with
+    # "no VERSION specified". Create a placeholder semver tag if needed.
+    for repo in /tt-metal /vllm; do
+        if [ -d "$repo/.git" ] && ! git -C "$repo" describe --tags --first-parent >/dev/null 2>&1; then
+            git -C "$repo" tag -a v0.0.0 -m "placeholder for shallow clone build" 2>/dev/null || true
+        fi
+    done
 fi
 
 #==============================================================================

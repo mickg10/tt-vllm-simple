@@ -27,10 +27,20 @@ services:
         # ================================================================
         echo "--- Phase 1: Ensuring tt-metal is built ---"
 
+        # Fix dubious ownership (container runs as root, bind mounts owned by host user)
+        git config --global --add safe.directory /tt-metal 2>/dev/null || true
+        git config --global --add safe.directory /vllm 2>/dev/null || true
+
         TTNN_LIB=/tt-metal/build/lib/libtt_metal.so
         if [ ! -f "$$TTNN_LIB" ] || ! python -c "import ttnn" 2>/dev/null; then
           echo "tt-metal C++ not built — building now (this takes ~30 min on first run)..."
           cd /tt-metal
+
+          # Ensure git describe works for CMake version detection (shallow clones lack tags)
+          if ! git describe --abbrev=10 --first-parent >/dev/null 2>&1; then
+            echo "  Creating version tag for shallow clone..."
+            git tag -a v0.0.0 -m "placeholder for shallow clone build" 2>/dev/null || true
+          fi
 
           # Install system deps
           if [ ! -f /tmp/.tt-deps-installed ]; then

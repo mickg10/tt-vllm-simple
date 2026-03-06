@@ -233,6 +233,7 @@ clone_repo "$VLLM_REPO" "$DEPLOY_DIR/vllm" "$BRANCH"
 clone_repo "$DOCKER_TT_REPO" "$DEPLOY_DIR/docker_tt" "$BRANCH"
 
 # Delete non-semver tags that break setuptools_scm (vllm pip install)
+# and ensure at least one semver tag exists for CMake version detection
 log "  Cleaning non-semver tags..."
 for repo_dir in "$DEPLOY_DIR/vllm" "$DEPLOY_DIR/tt-metal"; do
     (
@@ -243,6 +244,11 @@ for repo_dir in "$DEPLOY_DIR/vllm" "$DEPLOY_DIR/tt-metal"; do
                 git tag -d "$tag" >/dev/null 2>&1 && log "    Deleted tag: $tag ($(basename "$repo_dir"))"
             fi
         done
+        # Shallow clones may have no tags at all — CMake needs git describe to work
+        if ! git describe --tags --first-parent >/dev/null 2>&1; then
+            git tag -a v0.0.0 -m "placeholder for shallow clone build" 2>/dev/null && \
+                log "    Created v0.0.0 tag ($(basename "$repo_dir"), shallow clone)"
+        fi
     )
 done
 
