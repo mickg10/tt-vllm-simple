@@ -4,12 +4,12 @@
 # Modes:
 #   deploy      (default) Clone repos, build, start vLLM, wait for healthy, verify
 #   diagnostics Clone repos, reset devices, run tt-triage (no vLLM)
-#   bash        Clone repos, drop into interactive shell with tt-tools (no vLLM)
+#   shell       Clone repos, drop into interactive shell with tt-tools (no vLLM)
 #
 # Usage:
 #   ./deploy-galaxy.sh                           # deploy mode (starts vLLM)
 #   ./deploy-galaxy.sh --mode diagnostics        # diagnostics only (no vLLM)
-#   ./deploy-galaxy.sh --mode bash               # interactive shell with tt-tools
+#   ./deploy-galaxy.sh --mode shell               # interactive shell with tt-tools
 #   ./deploy-galaxy.sh --deploy-dir /path/to/ws  # custom workspace
 #
 # Prerequisites:
@@ -47,7 +47,7 @@ Usage: deploy-galaxy.sh [OPTIONS]
 Modes:
   --mode deploy        (default) Build + start vLLM, wait for healthy, verify
   --mode diagnostics   Run tt-triage diagnostics only (no vLLM)
-  --mode bash          Interactive shell with tt-tools (no vLLM)
+  --mode shell         Interactive shell with tt-tools (no vLLM)
 
 Options:
   --deploy-dir DIR     Workspace directory (default: ~/src_docker/ws/glm47_flash_deploy)
@@ -64,7 +64,7 @@ Examples:
   ./deploy-galaxy.sh --mode diagnostics
 
   # Interactive shell with all tt-tools:
-  ./deploy-galaxy.sh --mode bash
+  ./deploy-galaxy.sh --mode shell
 
   # Deploy to custom directory:
   ./deploy-galaxy.sh --deploy-dir /home/user/my_workspace
@@ -75,8 +75,8 @@ USAGE
 done
 
 case "$MODE" in
-    deploy|diagnostics|bash) ;;
-    *) echo "FATAL: Unknown mode '$MODE'. Use 'deploy', 'diagnostics', or 'bash'."; exit 1 ;;
+    deploy|diagnostics|shell) ;;
+    *) echo "FATAL: Unknown mode '$MODE'. Use 'deploy', 'diagnostics', or 'shell'."; exit 1 ;;
 esac
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
@@ -188,9 +188,9 @@ if [ "$MODE" = "diagnostics" ]; then
 fi
 
 #=============================================================================
-# Mode: bash
+# Mode: shell
 #=============================================================================
-if [ "$MODE" = "bash" ]; then
+if [ "$MODE" = "shell" ]; then
     log ""
     log "Step 3: Starting interactive shell..."
     $COMPOSE_BASE -f dev/docker-compose.shell.yml run --rm vllm-tt

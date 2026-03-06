@@ -69,7 +69,7 @@ help:
 	@echo "One-command scripts (clone + run):"
 	@echo "  ./scripts/deploy-galaxy.sh                    # clone + deploy vLLM"
 	@echo "  ./scripts/deploy-galaxy.sh --mode diagnostics # clone + diagnostics only"
-	@echo "  ./scripts/deploy-galaxy.sh --mode bash        # clone + interactive shell"
+	@echo "  ./scripts/deploy-galaxy.sh --mode shell       # clone + interactive shell"
 	@echo ""
 	@echo "  Shortcuts:"
 	@echo "  make run-galaxy         = run-device with Galaxy Wormhole config"
