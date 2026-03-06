@@ -147,8 +147,20 @@ services:
         HEALTH_BIN=/tt-metal/build_Release/test/tt_metal/tt_fabric/test_system_health
         if [ ! -x "$$HEALTH_BIN" ]; then
           echo "Building test_system_health..."
-          cd /tt-metal && cmake -B build_Release -DTT_METAL_BUILD_TESTS=ON 2>&1 | tail -3
-          cmake --build build_Release --target test_system_health -j$$(nproc) 2>&1 | tail -5
+          cd /tt-metal
+          if [ ! -f build_Release/build.ninja ]; then
+            echo "  Configuring (Ninja)..."
+            cmake -B build_Release -G Ninja \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DTT_METAL_BUILD_TESTS=ON \
+              -DWITH_PYTHON_BINDINGS=OFF 2>&1 | tail -10
+          fi
+          if [ -f build_Release/build.ninja ]; then
+            echo "  Building test_system_health..."
+            cmake --build build_Release --target test_system_health -j$$(nproc) 2>&1 | tail -10
+          else
+            echo "  cmake configure failed — skipping test_system_health"
+          fi
         fi
         if [ -x "$$HEALTH_BIN" ]; then
           case "$${MESH_DEVICE}" in
