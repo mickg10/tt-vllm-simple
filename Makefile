@@ -8,6 +8,7 @@ SHELL := /bin/bash
         build-device run-device stop-device logs-device wait-device verify-device \
         diagnostics-device diagnostics-galaxy shell-device shell-galaxy \
         run-galaxy stop-galaxy logs-galaxy wait-galaxy verify-galaxy \
+        run-t3k stop-t3k logs-t3k wait-t3k verify-t3k diagnostics-t3k shell-t3k \
         logs-prebuilt logs-source logs-dev clean reset-devices \
         workspace-init workspace-create workspace-list workspace-delete workspace-status workspace-sync
 
@@ -21,10 +22,20 @@ WAIT_TIMEOUT ?= 300
 BUILD_JOBS ?= 16
 WORKSPACE_PATH ?= $(shell ./scripts/workspace.sh path main 2>/dev/null || echo "")
 
-# Device configuration (override for different targets: galaxy, t3k, blackhole, etc.)
-# Usage: make run-device DEVICE_ENV=dev/.env.glm47.galaxy DEVICE_COMPOSE_EXTRA="-f dev/docker-compose.galaxy.yml"
-DEVICE_ENV ?= dev/.env.glm47.galaxy
-DEVICE_COMPOSE_EXTRA ?= -f dev/docker-compose.galaxy.yml
+# Device configuration — set DEVICE to auto-derive env file and compose extras.
+# Usage:
+#   make run-device DEVICE=galaxy    # uses dev/.env.glm47.galaxy + docker-compose.galaxy.yml
+#   make run-device DEVICE=t3k       # uses dev/.env.glm47.t3k (no compose override)
+#   make run-device                  # defaults to galaxy (backward compat)
+#
+# Or override explicitly:
+#   make run-device DEVICE_ENV=dev/.env.glm47.galaxy DEVICE_COMPOSE_EXTRA="-f dev/docker-compose.galaxy.yml"
+DEVICE ?= galaxy
+DEVICE_ENV ?= dev/.env.glm47.$(DEVICE)
+# Read MESH_DEVICE from env file (used for device-specific reset commands)
+_MESH_DEVICE = $(shell grep -m1 '^MESH_DEVICE=' $(DEVICE_ENV) 2>/dev/null | cut -d= -f2)
+# Use device-specific compose override if the file exists (keyed on DEVICE slug)
+DEVICE_COMPOSE_EXTRA ?= $(shell test -f dev/docker-compose.$(DEVICE).yml && echo "-f dev/docker-compose.$(DEVICE).yml")
 DEVICE_PROJECT ?= glm-flash
 DEVICE_CONTAINER = $(DEVICE_PROJECT)-vllm-tt-1
 DEVICE_WAIT_TIMEOUT ?= 5400
@@ -67,13 +78,16 @@ help:
 	@echo "  make shell-device       Interactive bash with all tt-tools (no vLLM)"
 	@echo ""
 	@echo "One-command scripts (clone + run):"
-	@echo "  ./scripts/deploy-galaxy.sh                    # clone + deploy vLLM"
-	@echo "  ./scripts/deploy-galaxy.sh --mode diagnostics # clone + diagnostics only"
-	@echo "  ./scripts/deploy-galaxy.sh --mode shell       # clone + interactive shell"
+	@echo "  ./scripts/deploy.sh --device galaxy                    # clone + deploy vLLM (Galaxy)"
+	@echo "  ./scripts/deploy.sh --device t3k --mode diagnostics    # clone + diagnostics (T3K)"
+	@echo "  ./scripts/deploy.sh --device galaxy --mode shell       # clone + interactive shell"
+	@echo "  ./scripts/deploy-galaxy.sh --mode diagnostics          # backward compat wrapper"
 	@echo ""
 	@echo "  Shortcuts:"
-	@echo "  make run-galaxy         = run-device with Galaxy Wormhole config"
-	@echo "  make run-t3k            = run-device with T3K config (TODO)"
+	@echo "  make run-galaxy         = run-device DEVICE=galaxy"
+	@echo "  make run-t3k            = run-device DEVICE=t3k"
+	@echo "  make diagnostics-t3k    = diagnostics-device DEVICE=t3k"
+	@echo "  make shell-t3k          = shell-device DEVICE=t3k"
 	@echo ""
 	@echo "Workspace targets (agentic development):"
 	@echo "  make workspace-init     Clone repos as bare, create main workspace"
@@ -352,7 +366,7 @@ verify-device:
 	)" || { echo "WARNING: Verification failed — check 'make logs-device'"; exit 1; }
 
 diagnostics-device:
-	@echo "=== TT Device Diagnostics ==="
+	@echo "=== TT Device Diagnostics ($(DEVICE)) ==="
 	@echo ""
 	@echo "Step 1/4: Stopping ALL vllm-tt containers..."
 	@# Stop containers from both default (dev) and named project
@@ -363,7 +377,11 @@ diagnostics-device:
 	-rm -f /dev/shm/TT_UMD_LOCK.* 2>/dev/null || true
 	@echo ""
 	@echo "Step 2/4: Resetting devices (clean state)..."
-	-tt-smi -glx_reset 2>/dev/null || tt-smi -r 2>/dev/null || echo "WARNING: Device reset not available"
+	@if [ "$(_MESH_DEVICE)" = "TG" ]; then \
+		tt-smi -glx_reset 2>/dev/null || tt-smi -r 2>/dev/null || echo "WARNING: Device reset not available"; \
+	else \
+		tt-smi -r 2>/dev/null || echo "WARNING: Device reset not available"; \
+	fi
 	-rm -f /dev/shm/TT_UMD_LOCK.* 2>/dev/null || true
 	@echo ""
 	@echo "Step 3/4: Running diagnostics (Metal + Inspector + triage)..."
@@ -372,11 +390,15 @@ diagnostics-device:
 	@echo ""
 	@echo "Step 4/4: Resetting devices (clean state for next run)..."
 	-rm -f /dev/shm/TT_UMD_LOCK.* 2>/dev/null || true
-	-tt-smi -glx_reset 2>/dev/null || tt-smi -r 2>/dev/null || echo "WARNING: Device reset not available"
+	@if [ "$(_MESH_DEVICE)" = "TG" ]; then \
+		tt-smi -glx_reset 2>/dev/null || tt-smi -r 2>/dev/null || echo "WARNING: Device reset not available"; \
+	else \
+		tt-smi -r 2>/dev/null || echo "WARNING: Device reset not available"; \
+	fi
 	-rm -f /dev/shm/TT_UMD_LOCK.* 2>/dev/null || true
 	@echo ""
 	@echo "=== Diagnostics complete. Devices reset. ==="
-	@echo "Run 'make run-device' to start vLLM."
+	@echo "Run 'make run-device DEVICE=$(DEVICE)' to start vLLM."
 
 shell-device:
 	@echo "=== TT Tools Interactive Shell ==="
@@ -384,14 +406,23 @@ shell-device:
 	docker compose --env-file $(DEVICE_ENV) -f dev/docker-compose.yml $(DEVICE_COMPOSE_EXTRA) -f dev/docker-compose.shell.yml \
 		-p $(DEVICE_PROJECT) run --rm vllm-tt
 
-# Shortcuts — Galaxy Wormhole (default config)
-run-galaxy: ; $(MAKE) run-device
-stop-galaxy: ; $(MAKE) stop-device
-logs-galaxy: ; $(MAKE) logs-device
-wait-galaxy: ; $(MAKE) wait-device
-verify-galaxy: ; $(MAKE) verify-device
-diagnostics-galaxy: ; $(MAKE) diagnostics-device
-shell-galaxy: ; $(MAKE) shell-device
+# Shortcuts — Galaxy Wormhole
+run-galaxy: ; $(MAKE) run-device DEVICE=galaxy
+stop-galaxy: ; $(MAKE) stop-device DEVICE=galaxy
+logs-galaxy: ; $(MAKE) logs-device DEVICE=galaxy
+wait-galaxy: ; $(MAKE) wait-device DEVICE=galaxy
+verify-galaxy: ; $(MAKE) verify-device DEVICE=galaxy
+diagnostics-galaxy: ; $(MAKE) diagnostics-device DEVICE=galaxy
+shell-galaxy: ; $(MAKE) shell-device DEVICE=galaxy
+
+# Shortcuts — T3K
+run-t3k: ; $(MAKE) run-device DEVICE=t3k
+stop-t3k: ; $(MAKE) stop-device DEVICE=t3k
+logs-t3k: ; $(MAKE) logs-device DEVICE=t3k
+wait-t3k: ; $(MAKE) wait-device DEVICE=t3k
+verify-t3k: ; $(MAKE) verify-device DEVICE=t3k
+diagnostics-t3k: ; $(MAKE) diagnostics-device DEVICE=t3k
+shell-t3k: ; $(MAKE) shell-device DEVICE=t3k
 
 #==============================================================================
 # Utility Targets

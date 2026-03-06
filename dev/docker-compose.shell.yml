@@ -24,7 +24,11 @@ services:
         echo ""
         echo "Available tools:"
         echo "  tt-smi -ls                    Device listing"
-        echo "  tt-smi -glx_reset             Galaxy full device reset"
+        if [ "$${MESH_DEVICE}" = "TG" ]; then
+          echo "  tt-smi -glx_reset             Galaxy full device reset"
+        else
+          echo "  tt-smi -r                     Device reset"
+        fi
         echo "  python /tt-metal/tools/tt-triage.py  Full triage suite"
         echo "  python -c 'import ttnn'       Verify TTNN available"
         echo ""
@@ -47,8 +51,15 @@ services:
         echo ""
         echo "System health test (needs exclusive device access):"
         HEALTH_BIN=/tt-metal/build_Release/test/tt_metal/tt_fabric/test_system_health
-        if [ -x "$$HEALTH_BIN" ]; then
-          echo "  $$HEALTH_BIN --cluster-type GALAXY"
+        case "$${MESH_DEVICE}" in
+          TG)  _CLUSTER_TYPE="GALAXY" ;;
+          T3K) _CLUSTER_TYPE="T3K" ;;
+          *)   _CLUSTER_TYPE="" ;;
+        esac
+        if [ -x "$$HEALTH_BIN" ] && [ -n "$$_CLUSTER_TYPE" ]; then
+          echo "  $$HEALTH_BIN --cluster-type $$_CLUSTER_TYPE"
+        elif [ -x "$$HEALTH_BIN" ]; then
+          echo "  $$HEALTH_BIN (no cluster type for MESH_DEVICE=$${MESH_DEVICE})"
         else
           echo "  (not built — run: cmake -B build_Release -DTT_METAL_BUILD_TESTS=ON && cmake --build build_Release --target test_system_health -j\$$(nproc))"
         fi

@@ -151,9 +151,16 @@ services:
           cmake --build build_Release --target test_system_health -j$$(nproc) 2>&1 | tail -5
         fi
         if [ -x "$$HEALTH_BIN" ]; then
-          CLUSTER_TYPE="GALAXY"
-          [ "$${MESH_DEVICE}" = "T3K" ] && CLUSTER_TYPE="T3K"
-          $$HEALTH_BIN --cluster-type $$CLUSTER_TYPE 2>&1 || true
+          case "$${MESH_DEVICE}" in
+            TG)  CLUSTER_TYPE="GALAXY" ;;
+            T3K) CLUSTER_TYPE="T3K" ;;
+            *)   CLUSTER_TYPE="" ;;
+          esac
+          if [ -n "$$CLUSTER_TYPE" ]; then
+            $$HEALTH_BIN --cluster-type $$CLUSTER_TYPE 2>&1 || true
+          else
+            echo "Skipping system health test (no cluster type for MESH_DEVICE=$${MESH_DEVICE})"
+          fi
         else
           echo "ERROR: Failed to build test_system_health"
         fi
