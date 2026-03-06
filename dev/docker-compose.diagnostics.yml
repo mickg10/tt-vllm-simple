@@ -1,7 +1,7 @@
 # Diagnostics overlay — run tt-metal triage tools instead of vLLM
 #
-# Starts Metal runtime with Inspector enabled, then runs full triage suite.
-# Requires exclusive device access (stops any running vLLM container first).
+# Fully self-contained: builds tt-metal C++ if needed, installs all tools,
+# then runs full triage suite. Works on fresh clones with no prior build.
 #
 # Usage: make diagnostics-device
 # Or:    docker compose --env-file dev/.env.glm47.galaxy \
@@ -22,18 +22,52 @@ services:
         echo "=== TT Device Diagnostics ==="
         echo ""
 
-        # ---- tt-smi (always available, no deps) ----
-        echo "--- tt-smi device listing ---"
-        tt-smi -ls 2>/dev/null || echo "tt-smi not available"
+        # ================================================================
+        # Phase 1: Build tt-metal and install all dependencies
+        # ================================================================
+        echo "--- Phase 1: Ensuring tt-metal is built ---"
+
+        TTNN_LIB=/tt-metal/build/lib/libtt_metal.so
+        if [ ! -f "$$TTNN_LIB" ] || ! python -c "import ttnn" 2>/dev/null; then
+          echo "tt-metal C++ not built — building now (this takes ~30 min on first run)..."
+          cd /tt-metal
+
+          # Install system deps
+          if [ ! -f /tmp/.tt-deps-installed ]; then
+            echo "  Installing tt-metal dependencies..."
+            ./install_dependencies.sh --docker 2>&1 | tail -5
+            touch /tmp/.tt-deps-installed
+          fi
+
+          # Build C++ (uses Ninja)
+          JOBS=$${BUILD_JOBS:-16}
+          echo "  Building tt-metal with $$JOBS parallel jobs..."
+          CMAKE_BUILD_PARALLEL_LEVEL=$$JOBS MAKEFLAGS="-j$$JOBS" ./build_metal.sh --build-tests 2>&1 | tail -20
+          echo "  tt-metal build complete."
+
+          # Install Python package
+          echo "  Installing tt-metal Python package..."
+          PYTORCH_INDEX="https://download.pytorch.org/whl/cpu"
+          if ! command -v tt-smi &>/dev/null; then
+            pip install --index-strategy unsafe-best-match "tt-smi==3.0.38" 2>&1 | tail -3
+          fi
+          (cd /tt-metal && pip install -e . --index-strategy unsafe-best-match 2>&1 | tail -5)
+        else
+          echo "tt-metal already built, skipping."
+        fi
+
+        # Verify ttnn loads
+        if ! python -c "import ttnn" 2>/dev/null; then
+          echo "FATAL: ttnn still not importable after build. Check build logs."
+          exit 1
+        fi
+        echo "ttnn OK"
         echo ""
 
-        # ---- tt-topology (pip package, may not be installed) ----
-        echo "--- tt-topology ---"
-        if which tt-topology >/dev/null 2>&1; then
-          tt-topology 2>&1 || echo "tt-topology failed"
-        else
-          pip install -q tt-topology 2>&1 | tail -3 && \
-            tt-topology 2>&1 || echo "tt-topology not available"
+        # ---- Install tt-topology ----
+        echo "--- Installing tt-topology ---"
+        if ! which tt-topology >/dev/null 2>&1; then
+          pip install -q tt-topology 2>&1 | tail -3
         fi
         echo ""
 
@@ -46,7 +80,28 @@ services:
             pip install -q -r /tt-metal/tools/triage/requirements.txt 2>&1 | tail -5 ) || true
         echo ""
 
-        # ---- Start Metal with Inspector in background ----
+        # ================================================================
+        # Phase 2: Device diagnostics (no Metal runtime needed)
+        # ================================================================
+        echo "--- Phase 2: Standalone diagnostics ---"
+        echo ""
+
+        # ---- tt-smi ----
+        echo "--- tt-smi device listing ---"
+        tt-smi -ls 2>/dev/null || echo "tt-smi not available"
+        echo ""
+
+        # ---- tt-topology ----
+        echo "--- tt-topology ---"
+        tt-topology -ls 2>&1 || echo "tt-topology failed"
+        echo ""
+
+        # ================================================================
+        # Phase 3: Inspector-based triage (needs Metal runtime)
+        # ================================================================
+        echo "--- Phase 3: Metal Inspector triage ---"
+        echo ""
+
         echo "--- Starting Metal runtime with Inspector RPC ---"
         python -c "
         import ttnn, time, sys, os
@@ -142,26 +197,13 @@ services:
         wait $$METAL_PID 2>/dev/null || true
         echo ""
 
-        # ---- System health test (C++ binary — needs exclusive device access) ----
-        echo "--- System health test ---"
+        # ================================================================
+        # Phase 4: System health test (C++ binary, exclusive device access)
+        # ================================================================
+        echo "--- Phase 4: System health test ---"
         HEALTH_BIN=/tt-metal/build_Release/test/tt_metal/tt_fabric/test_system_health
-        if [ ! -x "$$HEALTH_BIN" ]; then
-          echo "Building test_system_health..."
-          cd /tt-metal
-          if [ ! -f build_Release/build.ninja ]; then
-            echo "  Configuring (Ninja)..."
-            cmake -B build_Release -G Ninja \
-              -DCMAKE_BUILD_TYPE=Release \
-              -DTT_METAL_BUILD_TESTS=ON \
-              -DWITH_PYTHON_BINDINGS=OFF 2>&1 | tail -10
-          fi
-          if [ -f build_Release/build.ninja ]; then
-            echo "  Building test_system_health..."
-            cmake --build build_Release --target test_system_health -j$$(nproc) 2>&1 | tail -10
-          else
-            echo "  cmake configure failed — skipping test_system_health"
-          fi
-        fi
+        # build_metal.sh uses build/ not build_Release/, check both
+        [ ! -x "$$HEALTH_BIN" ] && HEALTH_BIN=/tt-metal/build/test/tt_metal/tt_fabric/test_system_health
         if [ -x "$$HEALTH_BIN" ]; then
           case "$${MESH_DEVICE}" in
             TG)  CLUSTER_TYPE="GALAXY" ;;
@@ -174,7 +216,7 @@ services:
             echo "Skipping system health test (no cluster type for MESH_DEVICE=$${MESH_DEVICE})"
           fi
         else
-          echo "ERROR: Failed to build test_system_health"
+          echo "test_system_health binary not found (build may not include tt_fabric tests)"
         fi
         echo ""
 
