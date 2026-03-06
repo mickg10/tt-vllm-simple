@@ -2,21 +2,21 @@
 # deploy-galaxy.sh — Deploy or diagnose GLM-4.7-Flash on a Galaxy Wormhole machine
 #
 # Modes:
-#   deploy      (default) Clone repos, build, start vLLM, wait for healthy, verify
+#   run      (default) Clone repos, build, start vLLM, wait for healthy, verify
 #   diagnostics Clone repos, reset devices, run tt-triage (no vLLM)
 #   shell       Clone repos, drop into interactive shell with tt-tools (no vLLM)
 #
 # Usage:
-#   ./deploy-galaxy.sh                           # deploy mode (starts vLLM)
+#   ./deploy-galaxy.sh                           # run mode (starts vLLM)
 #   ./deploy-galaxy.sh --mode diagnostics        # diagnostics only (no vLLM)
-#   ./deploy-galaxy.sh --mode shell               # interactive shell with tt-tools
+#   ./deploy-galaxy.sh --mode shell              # interactive shell with tt-tools
 #   ./deploy-galaxy.sh --deploy-dir /path/to/ws  # custom workspace
 #
 # Prerequisites:
 #   - Docker access (docker compose must work)
 #   - /dev/tenstorrent (TT devices)
-#   - /dev/hugepages-1G mounted (deploy mode)
-#   - ~/.cache/huggingface with zai-org/GLM-4.7-Flash or HF_TOKEN set (deploy mode)
+#   - /dev/hugepages-1G mounted (run mode)
+#   - ~/.cache/huggingface with zai-org/GLM-4.7-Flash or HF_TOKEN set (run mode)
 #
 # Idempotent: re-running skips already-completed steps.
 set -euo pipefail
@@ -24,7 +24,7 @@ set -euo pipefail
 #=============================================================================
 # Configuration (override with environment variables or CLI flags)
 #=============================================================================
-MODE="${MODE:-deploy}"
+MODE="${MODE:-run}"
 DEPLOY_DIR="${DEPLOY_DIR:-${HOME}/src_docker/ws/glm47_flash_deploy}"
 BRANCH="${BRANCH:-galaxy_wormhole}"
 TT_METAL_REPO="${TT_METAL_REPO:-https://github.com/mickg10/tt-metal.git}"
@@ -45,7 +45,7 @@ while [[ $# -gt 0 ]]; do
 Usage: deploy-galaxy.sh [OPTIONS]
 
 Modes:
-  --mode deploy        (default) Build + start vLLM, wait for healthy, verify
+  --mode run           (default) Build + start vLLM, wait for healthy, verify
   --mode diagnostics   Run tt-triage diagnostics only (no vLLM)
   --mode shell         Interactive shell with tt-tools (no vLLM)
 
@@ -75,8 +75,8 @@ USAGE
 done
 
 case "$MODE" in
-    deploy|diagnostics|shell) ;;
-    *) echo "FATAL: Unknown mode '$MODE'. Use 'deploy', 'diagnostics', or 'shell'."; exit 1 ;;
+    run|diagnostics|shell) ;;
+    *) echo "FATAL: Unknown mode '$MODE'. Use 'run', 'diagnostics', or 'shell'."; exit 1 ;;
 esac
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
@@ -92,7 +92,7 @@ log "Branch: $BRANCH"
 command -v git >/dev/null 2>&1 || die "git not found"
 docker compose version >/dev/null 2>&1 || die "'docker compose' not available"
 
-if [ "$MODE" = "deploy" ] && [ ! -d /dev/hugepages-1G ]; then
+if [ "$MODE" = "run" ] && [ ! -d /dev/hugepages-1G ]; then
     log "WARNING: /dev/hugepages-1G not found — container may fail to start"
 fi
 
@@ -202,7 +202,7 @@ if [ "$MODE" = "shell" ]; then
 fi
 
 #=============================================================================
-# Mode: deploy
+# Mode: run
 #=============================================================================
 sed -i 's/^SKIP_TT_METAL_BUILD=1/SKIP_TT_METAL_BUILD=0/' "$ENV_FILE"
 sed -i "s/^BUILD_JOBS=.*/BUILD_JOBS=$BUILD_JOBS/" "$ENV_FILE"
