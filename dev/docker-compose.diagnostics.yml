@@ -116,7 +116,23 @@ services:
           echo ""
         fi
 
-        # ---- System health test (C++ binary — build if needed) ----
+        # ---- Available deep-dive tools ----
+        echo "--- Available deep-dive tools ---"
+        [ -f /tt-metal/tt_metal/fabric/debug/fabric_erisc_dumper.py ] && \
+          echo "  fabric_erisc_dumper: python /tt-metal/tt_metal/fabric/debug/fabric_erisc_dumper.py [--fabric-streams] [--poll]"
+        [ -f /tt-metal/tests/tt_metal/microbenchmarks/ethernet/test_all_ethernet_links_bandwidth.py ] && \
+          echo "  eth bandwidth:      python /tt-metal/tests/tt_metal/microbenchmarks/ethernet/test_all_ethernet_links_bandwidth.py"
+        [ -f /tt-metal/tests/tt_metal/microbenchmarks/ethernet/test_all_ethernet_links_latency.py ] && \
+          echo "  eth latency:        python /tt-metal/tests/tt_metal/microbenchmarks/ethernet/test_all_ethernet_links_latency.py"
+        echo ""
+
+        # ---- Cleanup Metal runtime (must happen BEFORE system_health) ----
+        echo "--- Cleaning up Metal runtime ---"
+        kill $$METAL_PID 2>/dev/null || true
+        wait $$METAL_PID 2>/dev/null || true
+        echo ""
+
+        # ---- System health test (C++ binary — needs exclusive device access) ----
         echo "--- System health test ---"
         HEALTH_BIN=/tt-metal/build_Release/test/tt_metal/tt_fabric/test_system_health
         if [ ! -x "$$HEALTH_BIN" ]; then
@@ -133,20 +149,6 @@ services:
         fi
         echo ""
 
-        # ---- Available deep-dive tools ----
-        echo "--- Available deep-dive tools ---"
-        [ -f /tt-metal/tt_metal/fabric/debug/fabric_erisc_dumper.py ] && \
-          echo "  fabric_erisc_dumper: python /tt-metal/tt_metal/fabric/debug/fabric_erisc_dumper.py [--fabric-streams] [--poll]"
-        [ -f /tt-metal/tests/tt_metal/microbenchmarks/ethernet/test_all_ethernet_links_bandwidth.py ] && \
-          echo "  eth bandwidth:      python /tt-metal/tests/tt_metal/microbenchmarks/ethernet/test_all_ethernet_links_bandwidth.py"
-        [ -f /tt-metal/tests/tt_metal/microbenchmarks/ethernet/test_all_ethernet_links_latency.py ] && \
-          echo "  eth latency:        python /tt-metal/tests/tt_metal/microbenchmarks/ethernet/test_all_ethernet_links_latency.py"
-        echo ""
-
-        # ---- Cleanup ----
-        echo "--- Cleaning up Metal runtime ---"
-        kill $$METAL_PID 2>/dev/null || true
-        wait $$METAL_PID 2>/dev/null || true
         echo "=== Diagnostics complete ==="
     healthcheck:
       disable: true
