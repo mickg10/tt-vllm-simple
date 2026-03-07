@@ -74,14 +74,7 @@ services:
         echo "ttnn OK"
         echo ""
 
-        # ---- Install tt-topology ----
-        echo "--- Installing tt-topology ---"
-        if ! which tt-topology >/dev/null 2>&1; then
-          pip install -q tt-topology 2>&1 | tail -3
-        fi
-        echo ""
-
-        # ---- Install triage dependencies ----
+        # ---- Install triage + diagnostics dependencies ----
         echo "--- Installing triage dependencies ---"
         python -c "import ttexalens" 2>/dev/null || \
           ( cd /tt-metal && bash scripts/install_debugger.sh 2>&1 | tail -5 ) || true
@@ -101,9 +94,16 @@ services:
         tt-smi -ls 2>/dev/null || echo "tt-smi not available"
         echo ""
 
-        # ---- tt-topology ----
-        echo "--- tt-topology ---"
-        tt-topology -ls 2>&1 || echo "tt-topology failed"
+        # ---- Ethernet link diagnostics (standalone, no Metal runtime) ----
+        echo "--- Ethernet link diagnostics ---"
+        if [ -f /docker_tt/scripts/eth_diagnostics.py ]; then
+          python /docker_tt/scripts/eth_diagnostics.py 2>&1 || echo "eth_diagnostics FAILED"
+          echo ""
+          echo "--- Ethernet + NOC error counters ---"
+          python /docker_tt/scripts/eth_diagnostics.py --noc 2>&1 || echo "eth_diagnostics --noc FAILED"
+        else
+          echo "eth_diagnostics.py not found at /docker_tt/scripts/"
+        fi
         echo ""
 
         # ================================================================

@@ -64,7 +64,10 @@ services:
           echo "  (not built — run: cmake -B build_Release -DTT_METAL_BUILD_TESTS=ON && cmake --build build_Release --target test_system_health -j\$$(nproc))"
         fi
         echo ""
-        which tt-topology >/dev/null 2>&1 && echo "  tt-topology             Network topology tool"
+        echo "Ethernet diagnostics (standalone, no Metal runtime):"
+        echo "  python /docker_tt/scripts/eth_diagnostics.py            Per-core link up/down, heartbeat, retrain"
+        echo "  python /docker_tt/scripts/eth_diagnostics.py --noc      + NOC error counters"
+        echo "  python /docker_tt/scripts/eth_diagnostics.py --devices 0,1  Specific chips only"
         echo ""
         echo "Paths:"
         echo "  /tt-metal               tt-metal source + build"

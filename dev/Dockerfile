@@ -16,7 +16,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libcapstone-dev xxd libssl-dev file lsb-release \
     # For distributed support (Galaxy/TG)
     libopenmpi-dev openmpi-bin \
+    # Hardware management / BMC access
+    ipmitool sudo \
     && rm -rf /var/lib/apt/lists/*
+
+# Allow passwordless sudo for all users (container convenience)
+RUN echo "ALL ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/nopasswd && chmod 440 /etc/sudoers.d/nopasswd
 
 # OpenMPI ULFM is required for distributed builds and TT runtime (MPIX_* symbols).
 # tt-metal's install_dependencies.sh installs this for Ubuntu <= 24.04; we mirror
