@@ -160,18 +160,38 @@ make stop-dev
 
 ## Active Model Bring-ups
 
-| Model | Branch | Status | Throughput | Fork Repos |
-|-------|--------|--------|------------|------------|
-| GLM-4.7-Flash | `glm47_flash` | Functional (correctness verified) | ~6 tok/s | [tt-metal](https://github.com/mickg10/tt-metal/tree/glm47_flash), [vllm](https://github.com/mickg10/vllm/tree/glm47_flash) |
+| Model | Branch | Hardware | Status | Throughput (bs=1) | Fork Repos |
+|-------|--------|----------|--------|-------------------|------------|
+| GLM-4.7-Flash | `glm47_flash` | T3K (8 WH) | Traced decode | 7.0 tok/s | [tt-metal](https://github.com/mickg10/tt-metal/tree/glm47_flash), [vllm](https://github.com/mickg10/vllm/tree/glm47_flash) |
+| GLM-4.7-Flash | `galaxy_wormhole` | Galaxy WH (32 WH) | Traced decode | 8.1 tok/s | [tt-metal](https://github.com/mickg10/tt-metal/tree/galaxy_wormhole), [vllm](https://github.com/mickg10/vllm/tree/galaxy_wormhole) |
+| GLM-4.7-Flash | `glm47_flash_blackhole` | Galaxy BH (32 BH) | Traced decode | 8.6 tok/s | [tt-metal](https://github.com/mickg10/tt-metal/tree/glm47_flash_blackhole) |
+| GLM-4.7-REAP-218B | `glm47_reap_268b` | Galaxy WH (32 WH) | Traced decode + host sampling | 3.5 tok/s | [tt-metal](https://github.com/mickg10/tt-metal/tree/glm47_reap_268b), [vllm](https://github.com/mickg10/vllm/tree/glm47_reap_268b) |
 
-To resume GLM-4.7-Flash work:
+### Galaxy Wormhole (32 Wormhole chips, TG mesh 8x4)
+
+SSH: `ssh -p 55211 user@38.97.6.6`
+
+**GLM-4.7-Flash:**
 ```bash
-# Fetch + create workspace from existing remote branches
-# (workspace-create auto-detects remote branches after fetching)
-make workspace-create NAME=glm47_flash
+cd /home/user/src_docker/ws/glm47_flash_galaxy_wormhole/docker_tt
+sg docker -c "docker compose --env-file dev/.env.glm47.galaxy \
+  -f dev/docker-compose.yml -f dev/docker-compose.galaxy.yml up -d vllm-tt"
+```
 
-# See the worklog for current status and run commands
-cat ws/glm47_flash/docker_tt/WORKLOG_GLM47_FLASH.md
+**GLM-4.7-REAP-218B:**
+```bash
+cd /home/user/src_docker/ws/glm47_reap_268b_galaxy_wormhole/docker_tt
+sg docker -c "docker compose --env-file dev/.env.glm47_reap \
+  -f dev/docker-compose.yml -f dev/docker-compose.galaxy.yml up -d vllm-tt"
+```
+
+Only one model can run at a time (shared devices). Stop current before starting another.
+
+### T3K (8 Wormhole chips)
+
+```bash
+cd /home/ttuser/src_docker/ws/glm47_flash_small_wormhole/docker_tt
+docker compose --env-file dev/.env.glm47 -f dev/docker-compose.yml up -d vllm-tt
 ```
 
 ## Supported Models
