@@ -136,6 +136,7 @@ services:
       - GLM4_MOE_CACHE_DIR=${GLM4_MOE_CACHE_DIR:-}
       - GLM4_MOE_NUM_LAYERS=${GLM4_MOE_NUM_LAYERS:-}
       - GLM4_MOE_DEBUG_ALLOW_PARTIAL_LAYERS=${GLM4_MOE_DEBUG_ALLOW_PARTIAL_LAYERS:-}
+      - GLM4_MOE_DEBUG_SYNC=${GLM4_MOE_DEBUG_SYNC:-}
       - GLM4_MOE_KV_CACHE_TT_DTYPE=${GLM4_MOE_KV_CACHE_TT_DTYPE:-}
       - GLM4_MOE_DENSE_TT_DTYPE=${GLM4_MOE_DENSE_TT_DTYPE:-}
       - GLM4_MOE_EXPERTS_TT_DTYPE=${GLM4_MOE_EXPERTS_TT_DTYPE:-}
@@ -152,8 +153,22 @@ services:
       - GLM4_MOE_MLP_FIDELITY=${GLM4_MOE_MLP_FIDELITY:-}
       - GLM4_MOE_MLP_APPROX=${GLM4_MOE_MLP_APPROX:-}
       - GLM4_MOE_HF_MODEL=${GLM4_MOE_HF_MODEL:-}
+      - GLM4_MOE_FP32_ACC=${GLM4_MOE_FP32_ACC:-}
+      - GLM4_MOE_MOE_SPARSE_FP32_ACC=${GLM4_MOE_MOE_SPARSE_FP32_ACC:-}
+      - GLM4_MOE_MOE_SPARSE_FIDELITY=${GLM4_MOE_MOE_SPARSE_FIDELITY:-}
+      - GLM4_MOE_EP_L1=${GLM4_MOE_EP_L1:-}
+      - GLM4_MOE_REDUCE_IMPL=${GLM4_MOE_REDUCE_IMPL:-}
+      - GLM4_MOE_FUSE_SHARED_EP_REDUCE=${GLM4_MOE_FUSE_SHARED_EP_REDUCE:-}
+      - GLM4_MOE_EP_REDUCE_DEVICE=${GLM4_MOE_EP_REDUCE_DEVICE:-}
+      - GLM4_MOE_DRAM_SHARD=${GLM4_MOE_DRAM_SHARD:-}
+      - NUM_GPU_BLOCKS_OVERRIDE=${NUM_GPU_BLOCKS_OVERRIDE:-}
       - VLLM_SPECULATIVE_CONFIG=${VLLM_SPECULATIVE_CONFIG:-}
       - VLLM_USE_V1=${VLLM_USE_V1:-}
+      - VLLM_TT_DECODE_ONLY=${VLLM_TT_DECODE_ONLY:-}
+      - VLLM_TT_WARMUP_OVERRIDE=${VLLM_TT_WARMUP_OVERRIDE:-}
+      - HF_HUB_OFFLINE=${HF_HUB_OFFLINE:-}
+      - TRANSFORMERS_OFFLINE=${TRANSFORMERS_OFFLINE:-}
+      - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
       # TT-Metal device profiler knobs
       - TT_METAL_DEVICE_PROFILER=${TT_METAL_DEVICE_PROFILER:-}
       - TT_METAL_TRACE_PROFILER=${TT_METAL_TRACE_PROFILER:-}
@@ -171,8 +186,9 @@ services:
       - --port=8088
       - --enable-prefix-caching
       # Required for OpenAI "tools" requests (used by opencode and many UIs).
-      - --enable-auto-tool-choice
-      - --tool-call-parser=glm47
+      # Tool calling disabled for REAP benchmarking (glm47 parser not available)
+      # - --enable-auto-tool-choice
+      # - --tool-call-parser=glm47
       # NOTE: Do NOT enable a reasoning parser by default.
       #
       # The `glm45` parser expects the model output stream to contain <think>...
