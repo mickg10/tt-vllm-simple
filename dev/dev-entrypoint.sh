@@ -71,9 +71,13 @@ build_tt_metal() {
     if command -v cmake &>/dev/null; then
         cmake_ver="$(cmake --version 2>/dev/null | head -n 1 | awk '{print $3}' || true)"
     fi
-    if [ -z "$cmake_ver" ] || [ "$(printf '%s\n' "$required_cmake" "$cmake_ver" | sort -V | head -n 1)" != "$required_cmake" ]; then
-        echo "Installing/Upgrading CMake into /opt/venv (need >= $required_cmake, have ${cmake_ver:-<none>})..."
-        python -m pip install "cmake>=$required_cmake"
+    local need_ninja=0
+    if ! command -v ninja &>/dev/null; then
+        need_ninja=1
+    fi
+    if [ -z "$cmake_ver" ] || [ "$(printf '%s\n' "$required_cmake" "$cmake_ver" | sort -V | head -n 1)" != "$required_cmake" ] || [ "$need_ninja" = "1" ]; then
+        echo "Installing/Upgrading CMake + Ninja into /opt/venv (need >= $required_cmake, have ${cmake_ver:-<none>})..."
+        python -m pip install "cmake>=$required_cmake" ninja
         hash -r || true
         echo "Using CMake: $(command -v cmake)"
         cmake --version | head -n 1 || true
