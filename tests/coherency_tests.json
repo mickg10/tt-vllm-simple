@@ -1,0 +1,273 @@
+{
+  "description": "32 coherency tests for GLM-4.7-Flash. Run ALL in parallel. Each test has a prompt and expected validation. Tests range from trivial knowledge to Python coding tasks.",
+  "tests": [
+    {
+      "id": 1,
+      "category": "basic",
+      "prompt": "Hi, how are you?",
+      "max_tokens": 64,
+      "validate": "len(response) > 5",
+      "description": "Basic greeting - must produce coherent response"
+    },
+    {
+      "id": 2,
+      "category": "math",
+      "prompt": "What is 7 times 8? Answer with just the number.",
+      "max_tokens": 16,
+      "validate": "'56' in response",
+      "description": "Simple multiplication"
+    },
+    {
+      "id": 3,
+      "category": "knowledge",
+      "prompt": "What is the capital of France? Answer with just the city name.",
+      "max_tokens": 16,
+      "validate": "'Paris' in response",
+      "description": "Basic geography"
+    },
+    {
+      "id": 4,
+      "category": "math",
+      "prompt": "What is 123 + 456? Answer with just the number.",
+      "max_tokens": 16,
+      "validate": "'579' in response",
+      "description": "Simple addition"
+    },
+    {
+      "id": 5,
+      "category": "knowledge",
+      "prompt": "Who wrote Romeo and Juliet? Answer with just the name.",
+      "max_tokens": 32,
+      "validate": "'Shakespeare' in response",
+      "description": "Basic literature"
+    },
+    {
+      "id": 6,
+      "category": "knowledge",
+      "prompt": "What planet is closest to the Sun? Answer with just the planet name.",
+      "max_tokens": 16,
+      "validate": "'Mercury' in response",
+      "description": "Basic astronomy"
+    },
+    {
+      "id": 7,
+      "category": "logic",
+      "prompt": "If all cats are animals, and Whiskers is a cat, is Whiskers an animal? Answer yes or no.",
+      "max_tokens": 16,
+      "validate": "'yes' in response.lower() or 'Yes' in response",
+      "description": "Basic syllogism"
+    },
+    {
+      "id": 8,
+      "category": "knowledge",
+      "prompt": "What is the chemical symbol for water? Answer with just the formula.",
+      "max_tokens": 16,
+      "validate": "'H2O' in response",
+      "description": "Basic chemistry"
+    },
+    {
+      "id": 9,
+      "category": "math",
+      "prompt": "What is 15 squared? Answer with just the number.",
+      "max_tokens": 16,
+      "validate": "'225' in response",
+      "description": "Simple squaring"
+    },
+    {
+      "id": 10,
+      "category": "knowledge",
+      "prompt": "In what year did World War II end? Answer with just the year.",
+      "max_tokens": 16,
+      "validate": "'1945' in response",
+      "description": "Basic history"
+    },
+    {
+      "id": 11,
+      "category": "language",
+      "prompt": "Translate 'hello' to Spanish. Answer with just the word.",
+      "max_tokens": 16,
+      "validate": "'hola' in response.lower() or 'Hola' in response",
+      "description": "Basic translation"
+    },
+    {
+      "id": 12,
+      "category": "logic",
+      "prompt": "What comes next in the sequence: 2, 4, 6, 8, __? Answer with just the number.",
+      "max_tokens": 16,
+      "validate": "'10' in response",
+      "description": "Simple pattern"
+    },
+    {
+      "id": 13,
+      "category": "code",
+      "prompt": "Write a Python function that recursively computes the Fibonacci number fib(n). Just the function, no explanation.",
+      "max_tokens": 256,
+      "validate": "'def fib' in response and 'return' in response and ('fib(' in response)",
+      "validate_runs": true,
+      "description": "Recursive Fibonacci"
+    },
+    {
+      "id": 14,
+      "category": "code",
+      "prompt": "Write a Python function that iteratively computes the Fibonacci number fib(n) using a loop. Just the function, no explanation.",
+      "max_tokens": 256,
+      "validate": "'def fib' in response and 'return' in response and ('for' in response or 'while' in response)",
+      "validate_runs": true,
+      "description": "Iterative Fibonacci"
+    },
+    {
+      "id": 15,
+      "category": "code",
+      "prompt": "Write a Python function is_prime(n) that returns True if n is prime, False otherwise. Just the function.",
+      "max_tokens": 256,
+      "validate": "'def is_prime' in response and 'return' in response",
+      "validate_runs": true,
+      "description": "Prime check"
+    },
+    {
+      "id": 16,
+      "category": "code",
+      "prompt": "Write a Python function reverse_string(s) that reverses a string. Just the function.",
+      "max_tokens": 128,
+      "validate": "'def reverse_string' in response and 'return' in response",
+      "validate_runs": true,
+      "description": "Reverse string"
+    },
+    {
+      "id": 17,
+      "category": "code",
+      "prompt": "Write a Python function factorial(n) that computes n! recursively. Just the function.",
+      "max_tokens": 128,
+      "validate": "'def factorial' in response and 'return' in response",
+      "validate_runs": true,
+      "description": "Recursive factorial"
+    },
+    {
+      "id": 18,
+      "category": "code",
+      "prompt": "Write a Python function that takes a list of numbers and returns the sum. Call it sum_list(nums). Just the function.",
+      "max_tokens": 128,
+      "validate": "'def sum_list' in response and 'return' in response",
+      "validate_runs": true,
+      "description": "Sum a list"
+    },
+    {
+      "id": 19,
+      "category": "code",
+      "prompt": "Write a Python function max_in_list(nums) that finds the maximum value in a list without using the built-in max(). Just the function.",
+      "max_tokens": 256,
+      "validate": "'def max_in_list' in response and 'return' in response",
+      "validate_runs": true,
+      "description": "Find max in list"
+    },
+    {
+      "id": 20,
+      "category": "code",
+      "prompt": "Write a Python function count_vowels(s) that counts the number of vowels in a string. Just the function.",
+      "max_tokens": 128,
+      "validate": "'def count_vowels' in response and 'return' in response",
+      "validate_runs": true,
+      "description": "Count vowels"
+    },
+    {
+      "id": 21,
+      "category": "code",
+      "prompt": "Write a Python function is_palindrome(s) that checks if a string is a palindrome. Just the function.",
+      "max_tokens": 128,
+      "validate": "'def is_palindrome' in response and 'return' in response",
+      "validate_runs": true,
+      "description": "Palindrome check"
+    },
+    {
+      "id": 22,
+      "category": "code",
+      "prompt": "Write a Python function flatten(lst) that flattens a nested list of arbitrary depth. Just the function.",
+      "max_tokens": 256,
+      "validate": "'def flatten' in response and 'return' in response",
+      "validate_runs": true,
+      "description": "Flatten nested list"
+    },
+    {
+      "id": 23,
+      "category": "code",
+      "prompt": "Write a Python function binary_search(arr, target) that performs binary search on a sorted list and returns the index or -1. Just the function.",
+      "max_tokens": 256,
+      "validate": "'def binary_search' in response and 'return' in response",
+      "validate_runs": true,
+      "description": "Binary search"
+    },
+    {
+      "id": 24,
+      "category": "code",
+      "prompt": "Write a Python function bubble_sort(arr) that sorts a list using bubble sort. Just the function.",
+      "max_tokens": 256,
+      "validate": "'def bubble_sort' in response and 'return' in response",
+      "validate_runs": true,
+      "description": "Bubble sort"
+    },
+    {
+      "id": 25,
+      "category": "reasoning",
+      "prompt": "A farmer has 17 sheep. All but 9 die. How many sheep are left? Answer with just the number.",
+      "max_tokens": 32,
+      "validate": "'9' in response",
+      "description": "Word puzzle"
+    },
+    {
+      "id": 26,
+      "category": "knowledge",
+      "prompt": "What is the largest ocean on Earth? Answer with just the name.",
+      "max_tokens": 32,
+      "validate": "'Pacific' in response",
+      "description": "Basic geography 2"
+    },
+    {
+      "id": 27,
+      "category": "math",
+      "prompt": "What is the square root of 144? Answer with just the number.",
+      "max_tokens": 16,
+      "validate": "'12' in response",
+      "description": "Square root"
+    },
+    {
+      "id": 28,
+      "category": "language",
+      "prompt": "What is the opposite of 'hot'? Answer with just one word.",
+      "max_tokens": 16,
+      "validate": "'cold' in response.lower()",
+      "description": "Antonym"
+    },
+    {
+      "id": 29,
+      "category": "knowledge",
+      "prompt": "What programming language was created by Guido van Rossum? Answer with just the name.",
+      "max_tokens": 16,
+      "validate": "'Python' in response",
+      "description": "CS knowledge"
+    },
+    {
+      "id": 30,
+      "category": "math",
+      "prompt": "What is 1000 divided by 8? Answer with just the number.",
+      "max_tokens": 16,
+      "validate": "'125' in response",
+      "description": "Division"
+    },
+    {
+      "id": 31,
+      "category": "reasoning",
+      "prompt": "If it takes 5 machines 5 minutes to make 5 widgets, how long would it take 100 machines to make 100 widgets? Answer with just the number of minutes.",
+      "max_tokens": 32,
+      "validate": "'5' in response",
+      "description": "Classic logic puzzle"
+    },
+    {
+      "id": 32,
+      "category": "knowledge",
+      "prompt": "What is the speed of light in km/s approximately? Answer with just the number.",
+      "max_tokens": 32,
+      "validate": "'300000' in response or '300,000' in response or '299' in response",
+      "description": "Physics constant"
+    }
+  ]
+}

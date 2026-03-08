@@ -1,0 +1,236 @@
+# Diagnostics overlay — run tt-metal triage tools instead of vLLM
+#
+# Fully self-contained: builds tt-metal C++ if needed, installs all tools,
+# then runs full triage suite. Works on fresh clones with no prior build.
+#
+# Usage: make diagnostics-device
+# Or:    docker compose --env-file dev/.env.glm47.galaxy \
+#          -f dev/docker-compose.yml -f dev/docker-compose.galaxy.yml \
+#          -f dev/docker-compose.diagnostics.yml run --rm vllm-tt
+services:
+  vllm-tt:
+    volumes:
+      # Mount docker_tt scripts into container for diagnostics
+      - ${WORKSPACE_PATH:-.}/docker_tt/scripts:/docker_tt/scripts:ro
+    environment:
+      - TT_METAL_INSPECTOR=1
+      - TT_METAL_INSPECTOR_RPC=1
+    entrypoint: ["bash", "-lc"]
+    command:
+      - |
+        set -e
+        echo "=== TT Device Diagnostics ==="
+        echo ""
+
+        # ================================================================
+        # Phase 1: Build tt-metal and install all dependencies
+        # ================================================================
+        echo "--- Phase 1: Ensuring tt-metal is built ---"
+
+        # Fix dubious ownership (container runs as root, bind mounts owned by host user)
+        git config --global --add safe.directory /tt-metal 2>/dev/null || true
+        git config --global --add safe.directory /vllm 2>/dev/null || true
+
+        TTNN_LIB=/tt-metal/build/lib/libtt_metal.so
+        if [ ! -f "$$TTNN_LIB" ] || ! python -c "import ttnn" 2>/dev/null; then
+          echo "tt-metal C++ not built — building now (this takes ~30 min on first run)..."
+          cd /tt-metal
+
+          # Ensure git describe works for CMake version detection (shallow clones lack tags)
+          if ! git describe --abbrev=10 --first-parent >/dev/null 2>&1; then
+            echo "  Creating version tag for shallow clone..."
+            git tag -a v0.0.0 -m "placeholder for shallow clone build" 2>/dev/null || true
+          fi
+
+          # Install system deps
+          if [ ! -f /tmp/.tt-deps-installed ]; then
+            echo "  Installing tt-metal dependencies..."
+            ./install_dependencies.sh --docker 2>&1 | tail -5
+            touch /tmp/.tt-deps-installed
+          fi
+
+          # Build C++ (uses Ninja)
+          JOBS=$${BUILD_JOBS:-16}
+          echo "  Building tt-metal with $$JOBS parallel jobs..."
+          CMAKE_BUILD_PARALLEL_LEVEL=$$JOBS MAKEFLAGS="-j$$JOBS" ./build_metal.sh --build-tests 2>&1 | tail -20
+          echo "  tt-metal build complete."
+
+          # Install Python package
+          echo "  Installing tt-metal Python package..."
+          PYTORCH_INDEX="https://download.pytorch.org/whl/cpu"
+          if ! command -v tt-smi &>/dev/null; then
+            pip install --index-strategy unsafe-best-match "tt-smi==3.0.38" 2>&1 | tail -3
+          fi
+          (cd /tt-metal && pip install -e . --index-strategy unsafe-best-match 2>&1 | tail -5)
+        else
+          echo "tt-metal already built, skipping."
+        fi
+
+        # Verify ttnn loads
+        if ! python -c "import ttnn" 2>/dev/null; then
+          echo "FATAL: ttnn still not importable after build. Check build logs."
+          exit 1
+        fi
+        echo "ttnn OK"
+        echo ""
+
+        # ---- Install triage + diagnostics dependencies ----
+        echo "--- Installing triage dependencies ---"
+        python -c "import ttexalens" 2>/dev/null || \
+          ( cd /tt-metal && bash scripts/install_debugger.sh 2>&1 | tail -5 ) || true
+        python -c "import capnp" 2>/dev/null || \
+          ( [ -f /tt-metal/tools/triage/requirements.txt ] && \
+            pip install -q -r /tt-metal/tools/triage/requirements.txt 2>&1 | tail -5 ) || true
+        echo ""
+
+        # ================================================================
+        # Phase 2: Device diagnostics (no Metal runtime needed)
+        # ================================================================
+        echo "--- Phase 2: Standalone diagnostics ---"
+        echo ""
+
+        # ---- tt-smi ----
+        echo "--- tt-smi device listing ---"
+        tt-smi -ls 2>/dev/null || echo "tt-smi not available"
+        echo ""
+
+        # ---- Ethernet link diagnostics (standalone, no Metal runtime) ----
+        echo "--- Ethernet link diagnostics ---"
+        if [ -f /docker_tt/scripts/eth_diagnostics.py ]; then
+          python /docker_tt/scripts/eth_diagnostics.py 2>&1 || echo "eth_diagnostics FAILED"
+          echo ""
+          echo "--- Ethernet + NOC error counters ---"
+          python /docker_tt/scripts/eth_diagnostics.py --noc 2>&1 || echo "eth_diagnostics --noc FAILED"
+        else
+          echo "eth_diagnostics.py not found at /docker_tt/scripts/"
+        fi
+        echo ""
+
+        # ================================================================
+        # Phase 3: Inspector-based triage (needs Metal runtime)
+        # ================================================================
+        echo "--- Phase 3: Metal Inspector triage ---"
+        echo ""
+
+        echo "--- Starting Metal runtime with Inspector RPC ---"
+        python -c "
+        import ttnn, time, sys, os
+        print('Opening mesh device...')
+        try:
+            mesh = os.environ.get('MESH_DEVICE', 'TG')
+            if mesh == 'TG':
+                shape = ttnn.MeshShape(8, 4)
+            elif mesh == 'T3K':
+                shape = ttnn.MeshShape(1, 8)
+            elif mesh == 'N300':
+                shape = ttnn.MeshShape(1, 2)
+            else:
+                shape = ttnn.MeshShape(1, 1)
+            mesh_device = ttnn.open_mesh_device(shape)
+            print(f'Mesh device opened: {mesh_device}')
+        except Exception as e:
+            print(f'WARNING: Mesh device open failed: {e}')
+            print('Trying individual device open...')
+            try:
+                device = ttnn.open_device(device_id=0)
+                print(f'Single device 0 opened')
+            except Exception as e2:
+                print(f'WARNING: Single device open also failed: {e2}')
+                print('Inspector RPC will not be available.')
+                sys.exit(1)
+        print('Metal runtime active. Waiting for triage to complete...')
+        sys.stdout.flush()
+        # Keep running until killed
+        while True:
+            time.sleep(1)
+        " &
+        METAL_PID=$$!
+        echo "Metal PID: $$METAL_PID"
+
+        # Wait for Inspector RPC (port 50051) to become available
+        echo "Waiting for Inspector RPC on port 50051..."
+        INSPECTOR_UP=0
+        for i in $$(seq 1 120); do
+          if python -c "import socket; s=socket.socket(); s.settimeout(1); s.connect(('localhost',50051)); s.close()" 2>/dev/null; then
+            INSPECTOR_UP=1
+            echo "Inspector RPC available after $${i}s"
+            break
+          fi
+          # Check if Metal process died
+          if ! kill -0 $$METAL_PID 2>/dev/null; then
+            echo "ERROR: Metal process died before Inspector RPC started"
+            wait $$METAL_PID 2>/dev/null || true
+            break
+          fi
+          sleep 1
+        done
+        echo ""
+
+        if [ "$$INSPECTOR_UP" = "1" ]; then
+          # ---- Run full triage suite ----
+          echo "--- Ethernet link status (check_eth_status) ---"
+          cd /tt-metal && python tools/tt-triage.py --run=check_eth_status --dev=all 2>&1 || \
+            echo "check_eth_status FAILED"
+          echo ""
+
+          echo "--- NOC status (check_noc_status) ---"
+          cd /tt-metal && python tools/tt-triage.py --run=check_noc_status --dev=all 2>&1 || \
+            echo "check_noc_status FAILED"
+          echo ""
+        else
+          echo "WARNING: Inspector RPC not available — triage tools cannot run."
+          echo "Falling back to standalone ttexalens diagnostics..."
+          echo ""
+
+          # Fallback: standalone ethernet register reads via ttexalens
+          if [ -f /docker_tt/scripts/eth_diagnostics.py ]; then
+            python /docker_tt/scripts/eth_diagnostics.py --noc 2>&1 || true
+          else
+            echo "No fallback diagnostics available."
+          fi
+          echo ""
+        fi
+
+        # ---- Available deep-dive tools ----
+        echo "--- Available deep-dive tools ---"
+        [ -f /tt-metal/tt_metal/fabric/debug/fabric_erisc_dumper.py ] && \
+          echo "  fabric_erisc_dumper: python /tt-metal/tt_metal/fabric/debug/fabric_erisc_dumper.py [--fabric-streams] [--poll]"
+        [ -f /tt-metal/tests/tt_metal/microbenchmarks/ethernet/test_all_ethernet_links_bandwidth.py ] && \
+          echo "  eth bandwidth:      python /tt-metal/tests/tt_metal/microbenchmarks/ethernet/test_all_ethernet_links_bandwidth.py"
+        [ -f /tt-metal/tests/tt_metal/microbenchmarks/ethernet/test_all_ethernet_links_latency.py ] && \
+          echo "  eth latency:        python /tt-metal/tests/tt_metal/microbenchmarks/ethernet/test_all_ethernet_links_latency.py"
+        echo ""
+
+        # ---- Cleanup Metal runtime (must happen BEFORE system_health) ----
+        echo "--- Cleaning up Metal runtime ---"
+        kill $$METAL_PID 2>/dev/null || true
+        wait $$METAL_PID 2>/dev/null || true
+        echo ""
+
+        # ================================================================
+        # Phase 4: System health test (C++ binary, exclusive device access)
+        # ================================================================
+        echo "--- Phase 4: System health test ---"
+        HEALTH_BIN=/tt-metal/build_Release/test/tt_metal/tt_fabric/test_system_health
+        # build_metal.sh uses build/ not build_Release/, check both
+        [ ! -x "$$HEALTH_BIN" ] && HEALTH_BIN=/tt-metal/build/test/tt_metal/tt_fabric/test_system_health
+        if [ -x "$$HEALTH_BIN" ]; then
+          case "$${MESH_DEVICE}" in
+            TG)  CLUSTER_TYPE="GALAXY" ;;
+            T3K) CLUSTER_TYPE="T3K" ;;
+            *)   CLUSTER_TYPE="" ;;
+          esac
+          if [ -n "$$CLUSTER_TYPE" ]; then
+            $$HEALTH_BIN --cluster-type $$CLUSTER_TYPE 2>&1 || true
+          else
+            echo "Skipping system health test (no cluster type for MESH_DEVICE=$${MESH_DEVICE})"
+          fi
+        else
+          echo "test_system_health binary not found (build may not include tt_fabric tests)"
+        fi
+        echo ""
+
+        echo "=== Diagnostics complete ==="
+    healthcheck:
+      disable: true
+    restart: "no"

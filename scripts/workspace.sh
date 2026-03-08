@@ -15,7 +15,25 @@ else
 fi
 
 # Defaults
-WORKSPACE_BASE="${WORKSPACE_BASE:-$(dirname "$DOCKER_TT_DIR")}"
+#
+# WORKSPACE_BASE wants to be the directory that contains:
+# - docker_tt.git / tt-metal.git / vllm.git (bare repos)
+# - ws/ (worktrees)
+#
+# Historically docker_tt lived at "$WORKSPACE_BASE/docker_tt". With worktrees,
+# docker_tt can also live at "$WORKSPACE_BASE/ws/<name>/docker_tt". Make the
+# default robust so running this script from inside a worktree still "does the
+# right thing" and targets the shared bare repos.
+if [ -z "${WORKSPACE_BASE:-}" ]; then
+    case "$DOCKER_TT_DIR" in
+        */ws/*/docker_tt)
+            WORKSPACE_BASE="${DOCKER_TT_DIR%%/ws/*}"
+            ;;
+        *)
+            WORKSPACE_BASE="$(dirname "$DOCKER_TT_DIR")"
+            ;;
+    esac
+fi
 TT_METAL_DEFAULT_BRANCH="${TT_METAL_DEFAULT_BRANCH:-main}"
 VLLM_DEFAULT_BRANCH="${VLLM_DEFAULT_BRANCH:-dev}"
 
@@ -33,6 +51,16 @@ WS_ROOT="$WORKSPACE_BASE/ws"
 
 log() {
     echo "[workspace] $*"
+}
+
+ensure_origin_fetch_refspec() {
+    # Some bare repos can end up without a remote.origin.fetch refspec, which
+    # prevents origin/* refs from being created/updated. Ensure a standard
+    # "all branches" refspec exists.
+    local repo_bare="$1"
+    if ! git -C "$repo_bare" config --get-all remote.origin.fetch >/dev/null 2>&1; then
+        git -C "$repo_bare" config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
+    fi
 }
 
 error() {
@@ -76,15 +104,18 @@ cmd_init() {
     if [ ! -d "$DOCKER_TT_BARE" ]; then
         log "Cloning docker_tt as bare repo..."
         git clone --bare "$DOCKER_TT_FORK" "$DOCKER_TT_BARE"
+        ensure_origin_fetch_refspec "$DOCKER_TT_BARE"
         # No upstream for docker_tt (it IS the orchestration repo)
     else
         log "docker_tt.git already exists, skipping..."
+        ensure_origin_fetch_refspec "$DOCKER_TT_BARE"
     fi
 
     # tt-metal bare repo
     if [ ! -d "$TT_METAL_BARE" ]; then
         log "Cloning tt-metal as bare repo (this may take a while)..."
         git clone --bare "$TT_METAL_FORK" "$TT_METAL_BARE"
+        ensure_origin_fetch_refspec "$TT_METAL_BARE"
 
         # Add upstream remote
         if [ -n "$TT_METAL_UPSTREAM" ]; then
@@ -93,12 +124,14 @@ cmd_init() {
         fi
     else
         log "tt-metal.git already exists, skipping..."
+        ensure_origin_fetch_refspec "$TT_METAL_BARE"
     fi
 
     # vllm bare repo
     if [ ! -d "$VLLM_BARE" ]; then
         log "Cloning vllm as bare repo..."
         git clone --bare "$VLLM_FORK" "$VLLM_BARE"
+        ensure_origin_fetch_refspec "$VLLM_BARE"
 
         # Add upstream remote
         if [ -n "$VLLM_UPSTREAM" ]; then
@@ -107,6 +140,7 @@ cmd_init() {
         fi
     else
         log "vllm.git already exists, skipping..."
+        ensure_origin_fetch_refspec "$VLLM_BARE"
     fi
 
     # Create main workspace
@@ -167,45 +201,30 @@ cmd_create() {
         git -C "$VLLM_BARE" worktree add "$ws_dir/vllm" "$vllm_branch" 2>/dev/null || \
             git -C "$VLLM_BARE" worktree add "$ws_dir/vllm" -b "$vllm_branch" "origin/$vllm_branch"
     else
-        # Feature workspace: check if remote branches exist, otherwise create new ones.
-        # Fetch first so we see any recently-pushed branches.
-        log "  Fetching latest refs..."
+        # Feature workspace: fetch origin first, then use existing remote
+        # branch if it exists, otherwise create a new branch from defaults.
+        log "  Fetching latest refs from origin..."
         git -C "$DOCKER_TT_BARE" fetch origin --prune 2>/dev/null || true
         git -C "$TT_METAL_BARE" fetch origin --prune 2>/dev/null || true
         git -C "$VLLM_BARE" fetch origin --prune 2>/dev/null || true
 
-        # docker_tt: check for origin/<name>, fall back to new branch from main
-        if git -C "$DOCKER_TT_BARE" rev-parse --verify "origin/$name" &>/dev/null; then
-            log "  Creating docker_tt worktree (existing remote branch: $name)..."
-            git -C "$DOCKER_TT_BARE" worktree add "$ws_dir/docker_tt" "$name" 2>/dev/null || \
-                git -C "$DOCKER_TT_BARE" worktree add "$ws_dir/docker_tt" -b "$name" "origin/$name"
-            git -C "$ws_dir/docker_tt" branch --set-upstream-to="origin/$name" "$name" 2>/dev/null || true
-        else
-            log "  Creating docker_tt worktree (new branch: $name from main)..."
-            git -C "$DOCKER_TT_BARE" worktree add -b "$name" "$ws_dir/docker_tt" main
-        fi
+        # docker_tt: try existing branch, then existing remote, then new from main
+        log "  Creating docker_tt worktree (branch: $name)..."
+        git -C "$DOCKER_TT_BARE" worktree add "$ws_dir/docker_tt" "$name" 2>/dev/null || \
+            git -C "$DOCKER_TT_BARE" worktree add "$ws_dir/docker_tt" -b "$name" "origin/$name" 2>/dev/null || \
+            git -C "$DOCKER_TT_BARE" worktree add "$ws_dir/docker_tt" -b "$name" main
 
-        # tt-metal: check for origin/<name>, fall back to new branch from default
-        if git -C "$TT_METAL_BARE" rev-parse --verify "origin/$name" &>/dev/null; then
-            log "  Creating tt-metal worktree (existing remote branch: $name)..."
-            git -C "$TT_METAL_BARE" worktree add "$ws_dir/tt-metal" "$name" 2>/dev/null || \
-                git -C "$TT_METAL_BARE" worktree add "$ws_dir/tt-metal" -b "$name" "origin/$name"
-            git -C "$ws_dir/tt-metal" branch --set-upstream-to="origin/$name" "$name" 2>/dev/null || true
-        else
-            log "  Creating tt-metal worktree (new branch: $name from origin/$tt_metal_branch)..."
-            git -C "$TT_METAL_BARE" worktree add -b "$name" "$ws_dir/tt-metal" "origin/$tt_metal_branch"
-        fi
+        # tt-metal: try existing branch, then existing remote, then new from default
+        log "  Creating tt-metal worktree (branch: $name)..."
+        git -C "$TT_METAL_BARE" worktree add "$ws_dir/tt-metal" "$name" 2>/dev/null || \
+            git -C "$TT_METAL_BARE" worktree add "$ws_dir/tt-metal" -b "$name" "origin/$name" 2>/dev/null || \
+            git -C "$TT_METAL_BARE" worktree add "$ws_dir/tt-metal" -b "$name" "origin/$tt_metal_branch"
 
-        # vllm: check for origin/<name>, fall back to new branch from default
-        if git -C "$VLLM_BARE" rev-parse --verify "origin/$name" &>/dev/null; then
-            log "  Creating vllm worktree (existing remote branch: $name)..."
-            git -C "$VLLM_BARE" worktree add "$ws_dir/vllm" "$name" 2>/dev/null || \
-                git -C "$VLLM_BARE" worktree add "$ws_dir/vllm" -b "$name" "origin/$name"
-            git -C "$ws_dir/vllm" branch --set-upstream-to="origin/$name" "$name" 2>/dev/null || true
-        else
-            log "  Creating vllm worktree (new branch: $name from origin/$vllm_branch)..."
-            git -C "$VLLM_BARE" worktree add -b "$name" "$ws_dir/vllm" "origin/$vllm_branch"
-        fi
+        # vllm: try existing branch, then existing remote, then new from default
+        log "  Creating vllm worktree (branch: $name)..."
+        git -C "$VLLM_BARE" worktree add "$ws_dir/vllm" "$name" 2>/dev/null || \
+            git -C "$VLLM_BARE" worktree add "$ws_dir/vllm" -b "$name" "origin/$name" 2>/dev/null || \
+            git -C "$VLLM_BARE" worktree add "$ws_dir/vllm" -b "$name" "origin/$vllm_branch"
     fi
 
     log ""
@@ -330,6 +349,7 @@ cmd_sync() {
             local repo_name=$(basename "$repo_bare" .git)
             log "Fetching $repo_name..."
 
+            ensure_origin_fetch_refspec "$repo_bare"
             git -C "$repo_bare" fetch origin --prune 2>/dev/null || \
                 log "  Warning: Failed to fetch from origin"
 
