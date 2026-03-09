@@ -322,11 +322,40 @@ Codex-driven implementation is the architect's job — implementers write code d
 ### Key Rules
 
 1. **ONE implementer at a time** -- never spawn two (they corrupt code/containers)
-2. **Always consult Codex** (`mcp__codex-cli__codex` with model="gpt-5.2") at every architectural decision (architect only)
+2. **Always consult Codex** (`mcp__codex-cli__codex` with model="gpt-5.4") at every architectural decision (architect only)
 3. **Feature-flag everything** -- new optimizations behind env vars with safe defaults
 4. **Work in worktrees** -- all changes in `ws/glm47_flash_small_wormhole/`, never in main `docker_tt/`
 5. **Record everything** -- benchmark results go to `plan/glm47_flash/small_wormhole/perf-opt.md`
 6. **Architect is long-lived** (keeps context), implementer is ephemeral (per-task)
+7. **NEVER do git operations on remote machines** — all git work (clone, checkout, rebase, commit, etc.) happens LOCALLY, then rsync the result to the remote. Remote machines must mirror the local directory structure exactly. Use rsync with `--exclude='.git'` to ship sources.
+
+### Remote Machine Workflow
+
+Remote/slave machines (BH Galaxy, WH Galaxy, etc.) must use the **same directory structure** as local, with sources rsynced over. This prevents git state mismatches, botched clones, and wrong-branch issues.
+
+```bash
+# LOCAL: do all git work here
+cd /home/ttuser/src_docker/ws/<workspace>/tt-metal
+git checkout <branch>
+git rebase upstream/main
+# etc.
+
+# SHIP to remote (exclude .git to avoid state conflicts)
+rsync -avz --exclude='.git' --exclude='build' --exclude='__pycache__' \
+  --exclude='build_Release' --exclude='python_env' --exclude='generated' \
+  /home/ttuser/src_docker/ws/<workspace>/tt-metal/ \
+  <user>@<host>:<remote_workspace>/tt-metal/ \
+  -e "ssh -p <port>"
+
+# Same for vllm and docker_tt
+```
+
+**Rules:**
+- **NO `git clone` on remote machines** — rsync from local instead
+- **NO `git checkout/commit/rebase` on remote** — do it locally, rsync the result
+- **Same paths** — remote workspace should mirror local structure
+- **`--exclude='.git'`** — never ship .git dirs; the remote doesn't need git history
+- **Build artifacts stay remote** — exclude `build`, `build_Release`, `python_env` (built in container)
 
 ### The Loop
 

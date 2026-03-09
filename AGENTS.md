@@ -12,7 +12,7 @@
 ```
 ARCHITECT (long-lived, keeps context across all steps)
   |-- Reads perf-opt.md history + what worked/failed
-  |-- Consults Codex (gpt-5.2 via mcp__codex-cli__codex)
+  |-- Consults Codex (gpt-5.4 via mcp__codex-cli__codex)
   |-- Decides next optimization step
   +-- Hands off to implementer with clear spec + what NOT to do
 
@@ -54,11 +54,11 @@ ARCHITECT evaluates results
 ## Codex Usage
 
 **Always use the MCP tool** `mcp__codex-cli__codex` (NOT the Codex CLI command).
-**Always use gpt-5.2 model** (NOT the default codex model).
+**Always use gpt-5.4 model** (NOT the default codex model).
 ```python
 mcp__codex-cli__codex(
     prompt="...",
-    model="gpt-5.2",
+    model="gpt-5.4",
     cwd="/home/ttuser/src_docker/ws/glm47_flash_small_wormhole"
 )
 ```

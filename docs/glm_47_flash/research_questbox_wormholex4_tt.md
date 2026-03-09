@@ -6300,7 +6300,7 @@ aggressive and should work even more reliably.
    k_chunk_size=64 with fp32_dest_acc_en=False and passes. It was not designed to
    test k_chunk_size=128 specifically.
 
-5. **Codex analysis** (gpt-5.2) confirms: with fp32_dest_acc_en=False, there is no
+5. **Codex analysis** (gpt-5.4) confirms: with fp32_dest_acc_en=False, there is no
    theoretical reason k_chunk_size=128 would cause corruption. The paged reader does
    per-tile page-table translation and correctly handles cross-page boundaries.
 
@@ -8385,7 +8385,7 @@ testing confirms it causes the bs=1 regression, consider:
 
 ### Analysis
 
-Codex (gpt-5.2) confirmed that `ttnn.mul(a, b, input_tensor_a_activations=[ttnn.UnaryOpType.SILU])`
+Codex (gpt-5.4) confirmed that `ttnn.mul(a, b, input_tensor_a_activations=[ttnn.UnaryOpType.SILU])`
 works with sparse_matmul output tensors. Key findings:
 
 1. **rank-6 tensors supported**: binary-ng backend handles rank > 4 tensors. The only
@@ -8833,7 +8833,7 @@ systemic change in trace capture or device behavior, not from the code changes.
 
 ### Codex Finding
 
-Codex (gpt-5.2) analyzed `ttnn/cpp/ttnn/operations/data_movement/reshape_view/reshape.cpp`
+Codex (gpt-5.4) analyzed `ttnn/cpp/ttnn/operations/data_movement/reshape_view/reshape.cpp`
 and confirmed:
 
 1. **`ttnn.squeeze` delegates to `ttnn.reshape`** internally
@@ -8965,7 +8965,7 @@ Both are Tier 4 (high complexity) optimizations. Not recommended for the current
 
 ### Permute Is NOT a Free View
 
-Codex (gpt-5.2) confirmed that `ttnn.permute(0,2,1,3)` on tiled 4D tensors:
+Codex (gpt-5.4) confirmed that `ttnn.permute(0,2,1,3)` on tiled 4D tensors:
 
 1. **Is a real device kernel**, not a metadata/view operation
 2. Maps to `transpose_hc` -> `ttnn::transpose(input, 1, -2)` (permute.cpp:91)
@@ -9069,7 +9069,7 @@ device_params["trace_region_size"] = 50000000
 
 ### What trace_region_size Controls
 
-From Codex (gpt-5.2) analysis of tt-metal internals:
+From Codex (gpt-5.4) analysis of tt-metal internals:
 
 1. **Carves a dedicated TRACE region in DRAM**: Trace buffers (`BufferType::TRACE`)
    allocate from this region top-down (`allocator.cpp:35`).

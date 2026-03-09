@@ -439,7 +439,7 @@ Targets updated per user requirements:
 - **Benchmark matrix:** (1k/500, 10k/1000, 29k/3000 ctx/gen) × (batch=1,4,8,32)
 
 Team structure:
-- Team lead / architect (coordinates, consults Codex gpt-5.2)
+- Team lead / architect (coordinates, consults Codex gpt-5.4)
 - Implementer (makes code changes, feature-flags everything)
 - Tester (coherency verification at tiny sizes FIRST)
 - Benchmarker (full matrix, records to perf-opt.md)

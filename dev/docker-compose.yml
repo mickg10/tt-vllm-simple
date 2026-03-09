@@ -38,6 +38,8 @@ services:
       - HF_MODEL=${HF_MODEL:-Qwen/Qwen3-0.6B}
       - HF_TOKEN=${HF_TOKEN:-}
       - HF_HOME=/cache/huggingface
+      - HF_HUB_OFFLINE=${HF_HUB_OFFLINE:-}
+      - TRANSFORMERS_OFFLINE=${TRANSFORMERS_OFFLINE:-}
       - VLLM_RPC_TIMEOUT=${VLLM_RPC_TIMEOUT:-600000}
       - VLLM_ENGINE_ITERATION_TIMEOUT_S=${VLLM_ENGINE_ITERATION_TIMEOUT_S:-}
       - MESH_DEVICE=${MESH_DEVICE:-N300}
@@ -127,6 +129,7 @@ services:
       - GLM4_MOE_LITE_FUSE_MLP_MOE_REDUCE=${GLM4_MOE_LITE_FUSE_MLP_MOE_REDUCE:-}
       - GLM4_MOE_LITE_FUSE_SHARED_GATE_UP=${GLM4_MOE_LITE_FUSE_SHARED_GATE_UP:-}
       - GLM4_MOE_LITE_FUSED_SHARED_EXPERT=${GLM4_MOE_LITE_FUSED_SHARED_EXPERT:-0}
+      - GLM4_MOE_LITE_FUSED_MOE=${GLM4_MOE_LITE_FUSED_MOE:-}
       - GLM4_MOE_LITE_SHARDED_MLP=${GLM4_MOE_LITE_SHARDED_MLP:-}
       - GLM4_MOE_LITE_SKIP_DEFENSIVE_CLONES=${GLM4_MOE_LITE_SKIP_DEFENSIVE_CLONES:-}
       - GLM4_MOE_LITE_MTP=${GLM4_MOE_LITE_MTP:-}
@@ -144,12 +147,20 @@ services:
       - TT_METAL_PROFILER_PROGRAM_SUPPORT_COUNT=${TT_METAL_PROFILER_PROGRAM_SUPPORT_COUNT:-}
       - TTNN_OP_PROFILER=${TTNN_OP_PROFILER:-}
       - GLM4_MOE_LITE_TRACY_DUMP_AFTER=${GLM4_MOE_LITE_TRACY_DUMP_AFTER:-}
+      # Architecture override (e.g. blackhole)
+      - ARCH_NAME=${ARCH_NAME:-}
+      # Pre-downloaded model weights path
+      - MODEL_WEIGHTS_PATH=${MODEL_WEIGHTS_PATH:-}
+      # Additional GLM bring-up knobs
+      - GLM4_MOE_LITE_TP_PREFILL=${GLM4_MOE_LITE_TP_PREFILL:-}
+      - GLM4_MOE_LITE_SKIP_TYPECAST=${GLM4_MOE_LITE_SKIP_TYPECAST:-}
     command:
       - --max-model-len=${MAX_MODEL_LEN:-32768}
       - --max-num-seqs=${MAX_NUM_SEQS:-32}
       - --block-size=${VLLM_BLOCK_SIZE:-64}
       - --port=8088
       - --enable-prefix-caching
+      # --num-scheduler-steps=10  # NOT SUPPORTED by this vLLM version
       # Required for OpenAI "tools" requests (used by opencode and many UIs).
       - --enable-auto-tool-choice
       - --tool-call-parser=glm47
@@ -172,7 +183,7 @@ services:
       retries: 3
     ipc: host
     privileged: true
-    restart: unless-stopped
+    restart: "no"
 
 volumes:
   tt-metal-build:

@@ -1,0 +1,14 @@
+# Blackhole Galaxy compose override
+#
+# Use with: -f dev/docker-compose.yml -f dev/docker-compose.galaxy.yml -f dev/docker-compose.blackhole.yml
+#
+# Blackhole-specific overrides for source build (SKIP_TT_METAL_BUILD=0).
+# tt-metal is built from source inside the container.
+
+services:
+  vllm-tt:
+    volumes:
+      # Pre-downloaded model weights
+      - /home/mick/models:/home/mick/models:ro
+    environment:
+      - ARCH_NAME=blackhole
