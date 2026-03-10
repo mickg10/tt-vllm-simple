@@ -258,6 +258,34 @@ Each repo has two remotes:
 
 Configure in `scripts/workspace.env`.
 
+## Research & Progress Reports (`docs/`)
+
+Research findings, post-mortems, and progress reports are committed to `docs/` in docker_tt,
+organized by model and device — mirroring the `plan/` directory structure:
+
+```
+docker_tt/docs/
+├── glm_47_flash/                          # GLM-4.7-Flash (47B)
+│   ├── batch-bucketed-traces.md
+│   ├── mtp-implementation-plan.md
+│   ├── perf-opt.md
+│   └── research_questbox_wormholex4_tt.md
+├── glm_47_reap/                           # GLM-4.7-REAP-218B (268B)
+│   ├── galaxy_wormhole/                   # Device-specific
+│   │   └── postmortem-bf4.md
+│   └── galaxy_blackhole/                  # (future)
+└── <model_name>/                          # Convention: model → device subdirs
+    ├── <device>/
+    └── <device>/
+```
+
+**Convention**: `docs/<model_name>/<device>/` for device-specific reports.
+Model-level docs (device-agnostic) go directly in `docs/<model_name>/`.
+Detailed iteration logs and research stay in `plan/` (outside git).
+Committed docs are polished reports, post-mortems, and execution plans.
+
+---
+
 ## Active Porting Efforts
 
 Each model bring-up lives on its own branch (same name across all three repos) with a
@@ -307,7 +335,7 @@ Five roles:
 - **This is the PRIMARY thinking tool** — use for every non-trivial technical question
 
 #### Verification: Codex (BACKGROUND AGENTS ONLY)
-- Tool: `mcp__codex-cli__codex` with `model="gpt-5.2"`
+- Tool: `mcp__codex-cli__codex` with `model="gpt-5.4"`
 - `cwd` MUST match active workspace (e.g., `ws/glm47_reap_268b_galaxy_wormhole`)
 - Used BY: background agents spawned via `Task(run_in_background=True)`
 - Used FOR: Cross-referencing findings against codebase, validating assumptions, checking reference implementations
@@ -335,7 +363,7 @@ Task(
     subagent_type="general-purpose",
     name="codex-verifier",
     run_in_background=True,
-    prompt="Use mcp__codex-cli__codex with model='gpt-5.2', cwd='...' to verify: "
+    prompt="Use mcp__codex-cli__codex with model='gpt-5.4', cwd='...' to verify: "
            "[finding from Gemini]. Search for execute_trace patterns. Report via SendMessage."
 )
 ```
@@ -370,7 +398,7 @@ Send the instruction to the implementer instead.**
 
 1. **ONE implementer at a time** -- never spawn two (they corrupt code/containers)
 2. **Gemini INLINE for analysis** -- `mcp__gemini-cli__ask-gemini` with `model="gemini-3.1-pro-preview"`
-3. **Codex in BACKGROUND for verification** -- `mcp__codex-cli__codex` with `model="gpt-5.2"`, always via `Task(run_in_background=True)`
+3. **Codex in BACKGROUND for verification** -- `mcp__codex-cli__codex` with `model="gpt-5.4"`, always via `Task(run_in_background=True)`
 4. **NO implementation without dual verification** -- Gemini analysis + Codex cross-check
 5. **Feature-flag everything** -- new optimizations behind env vars with safe defaults
 6. **Work in worktrees** -- all changes in `ws/<workspace>/`, never in main repos
@@ -415,7 +443,7 @@ On every session start or context compaction, re-read these files:
 
 ### Critical Rules (from lessons learned)
 
-- **BF4 is BANNED** — use BF8 minimum for all weight dtypes. BF4 produces garbled output.
+- **BF4 status: UNDER RE-TEST** — previously banned (garbled output on REAP), but DSv3/R1 shows BFP4_b is nearly lossless on deep MoE. Re-testing with proper metrics. See `docs/glm_47_reap/galaxy_wormhole/postmortem-bf4.md` for execution plan.
 - **MTP is BANNED (temporarily)** — Do NOT work on MTP speculative decode. Focus on megafusion first. MTP adds complexity and makes the codebase harder to optimize long-term. Revisit only after megafusion is complete.
 - **Program-count fusion is a dead end** — ~15us/program in trace mode, not worth weeks of C++.
 - **Tracy device profiler crashes GLM warmup** — use Python sync profiling instead.
