@@ -210,10 +210,23 @@ Both confirmed rs_ag_async safe for trace mode, negligible performance cost.
 | `docker_tt/dev/docker-compose.galaxy.yml` | Galaxy-specific overrides |
 | `docker_tt/docs/glm_47_reap/galaxy_wormhole/` | Committed research reports |
 
-## Remaining Opportunities
+## Next Phase (2026-03-10+)
 
-1. **CCL library fix**: Proper fix for `all_reduce(cluster_axis=1)` on FABRIC_2D to eliminate rs_ag workaround.
-2. **Dedicated trace region**: Currently re-capturing trace each request. Persistent trace region would eliminate recapture overhead.
-3. **Router L1 (V2 P4)**: Code exists in moe_tt.py. Never tested in isolation. Est: 1-5ms.
-4. **FP8 checkpoint source**: Test BF16→FP8→BFP4 conversion path for potentially even better quality.
-5. **Blanket BF4 (all weights)**: Tested — works (+28%) but SEED-3 is better (+44%). Not worth pursuing.
+### SEED-4: GLM-4.7 Base (358B) Bringup — READY
+- `zai-org/GLM-4.7` (BF16) or `zai-org/GLM-4.7-FP8`
+- 64 layers, 160 experts — same `glm4_moe` code, zero changes for BF16
+- Memory: 6.53 GB/device (fits easily). Expected: **~174 tok/s** agg bs=32
+- FP8 needs ~50 LOC dequant (import from DSv3)
+
+### SEED-5: Fused Partial RoPE (5-15%)
+- 20 element-wise DRAM ops per layer for Q+K RoPE → 2-4 ops
+- Test `ttnn.experimental.rotary_embedding_llama` for partial rotary support
+
+### SEED-6: Add-Before-Reduce CCL (~4%)
+- Merge shared+routed TP reduce: add locally first, then 1 all_reduce instead of 2
+- NOT the same as FUSE_SHARED_EP_REDUCE (which hangs) — simpler, no axis-1 fusion
+
+### Other Remaining
+1. **CCL library fix**: Proper fix for `all_reduce(cluster_axis=1)` on FABRIC_2D
+2. **Dedicated trace region**: Eliminate trace recapture overhead
+3. **Sparse matmul grid utilization**: Only 56-67% of 72 cores used (rectangular constraint)

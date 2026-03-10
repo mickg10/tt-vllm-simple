@@ -84,6 +84,97 @@ GLM4_MOE_DENSE_TT_DTYPE=bf8     # shared + attention
 
 ---
 
+### SEED-4: GLM-4.7 Base (358B) Bringup on Galaxy Wormhole — READY
+
+**Status**: READY — zero code changes needed, FP8 dequant is ~50 LOC
+**Expected**: ~174 tok/s agg bs=32, ~5.5 tok/s bs=1 (~135ms ITL) with SEED-3 BF4
+**Research source**: `optimization-analysis-v1.md` (researcher, 2026-03-10, Codex-verified)
+
+**Why it's faster than REAP**: 64 layers vs 92 (-30%), 160 experts vs 96 (+67%).
+30% fewer layers dominates: net ~18% fewer total ops. Memory: 6.53 GB/device (20.4% of 32GB) — fits.
+
+**Architecture (identical to REAP except layer/expert count)**:
+- `zai-org/GLM-4.7` (BF16) or `zai-org/GLM-4.7-FP8` (FP8)
+- 64 layers, 160 routed experts (top-8), 1 shared, hidden=5120, moe_intermediate=1536
+- 96Q/8KV GQA, head_dim=128, partial_rotary_factor=0.5
+- first_k_dense_replace=3, intermediate_size=12288
+
+**Implementation plan**:
+1. **BF16 source (zero code changes)**: Point HF_MODEL to `zai-org/GLM-4.7`, set same env vars.
+   160%32=0 passes EP sharding. All config params auto-load from HF config.json.
+2. **FP8 source (~50 LOC)**: Import DSv3's `dequantize_tensor()` from
+   `models/demos/deepseek_v3/utils/dequantize.py`. Add FP8 detection + host-side dequant
+   in `_linear_weight_tt()` (layer_weights.py:163) and `_experts_weight_tt()` (layer_weights.py:215).
+   Path: FP8 → dequant to BF16 on host → `ttnn.as_tensor(dtype=bfloat4_b)` on device.
+3. **Env config**: Copy `.env.glm47_reap` → `.env.glm47`, change HF_MODEL, keep all SEED-3 flags.
+4. **Docker compose**: Add GLM4_MOE_EXPERTS_W1_DTYPE etc. passthrough (already done).
+5. **Benchmark**: bs=1 and bs=32, gen=50, compare to REAP baseline.
+
+**Effort**: 1-2 hours (BF16), half day (FP8 dequant)
+**Risk**: Low — same code, same hardware, same model type. Only risk is weight cache rebuild time (~60 min for new model).
+
+---
+
+### SEED-5: Fused Partial RoPE — NEEDS VALIDATION
+
+**Status**: NEEDS VALIDATION — 20 element-wise DRAM ops per layer for Q+K RoPE
+**Expected**: 5-15% improvement (10-25ms saved from ~170ms ITL)
+**Research source**: `optimization-analysis-v1.md` OPT-3 (researcher, 2026-03-10)
+
+**Root cause**: `attention_tt.py:482-518` implements partial RoPE with 10 separate ops per tensor:
+2 slices (rotary/pass), 2 slices (half-dims), neg, concat, 2 multiply, add, concat.
+20 ops/layer × 89 MoE layers = 1,780 ops in DRAM interleaved memory.
+
+**Fix options** (in order of preference):
+1. **Use `ttnn.experimental.rotary_embedding_llama`** — may support partial rotary factor.
+   Need to verify: NeoX-style rotation (not GPT-J), partial_rotary_factor=0.5, HEIGHT_SHARDED input.
+2. **Custom fused kernel** — single op: slice rotary portion, apply rotation, concat with pass-through.
+3. **Reduce ops without fusion** — pre-compute cos/sin for just the rotary dims, eliminate slices.
+
+**Implementation plan**:
+1. Check `ttnn.experimental.rotary_embedding_llama` API and constraints
+2. Test with a single attention layer outside trace
+3. If compatible: replace 10 ops with 1, benchmark
+4. If not: try option 2 or 3
+
+**Effort**: 2-4 hours (option 1), 1-2 days (option 2)
+**Risk**: Medium — rotary embedding op may not support NeoX-style or partial factor.
+**Transfers to GLM-4.7**: Yes, identical attention architecture.
+
+---
+
+### SEED-6: Add-Before-Reduce CCL Optimization — NEEDS VALIDATION
+
+**Status**: NEEDS VALIDATION — eliminate 1 of 4 axis-0 all_reduces per MoE layer
+**Expected**: ~4% improvement (~6.7ms saved from ~170ms ITL)
+**Research source**: `optimization-analysis-v1.md` OPT-6 (researcher, 2026-03-10)
+
+**Root cause**: Each MoE layer does 4 axis-0 all_reduces:
+1. Attention O-proj TP reduce
+2. Shared expert TP reduce
+3. Routed expert TP reduce (before EP reduce)
+4. (EP reduce uses rs_ag on axis-1)
+
+#2 and #3 are both `all_reduce(axis=0)` of `[1,1,32,5120]` tensors.
+If we `add(shared_partial, routed_partial)` FIRST, then do ONE all_reduce, we save 1 collective.
+
+**Why this is NOT the same as FUSE_SHARED_EP_REDUCE=1** (which hangs):
+- FUSE_SHARED_EP_REDUCE=1 fuses the ENTIRE reduce pipeline (including axis-1 rs_ag)
+- This proposal ONLY merges the axis-0 TP reduce: `add → all_reduce(axis=0) → rs_ag(axis=1)`
+- The add is a local op (no CCL), so it can't trigger the CCL deadlock
+
+**Implementation** (`decoder_layer_tt.py:480-570`):
+1. Add env var `GLM4_MOE_MERGE_TP_REDUCE=0` (default off)
+2. When enabled: `ttnn.add(shared_partial, routed_partial)` → single `all_reduce(axis=0)` → `rs_ag(axis=1)`
+3. Feature-flagged, safe to test without risk
+
+**Effort**: 1-2 hours
+**Risk**: Medium — need to verify the shared expert partial sum can be added before TP reduce
+  (it should be, since both are TP-partial sums of the same hidden dimension).
+**Transfers to GLM-4.7**: Yes, identical structure.
+
+---
+
 ## Completed Seeds (Implemented)
 
 ### SEED-0: Batch>1 via rs_ag_async (V2 P6) — SHIPPED
