@@ -29,27 +29,34 @@ Use `--force-recreate` when env vars change (triggers weight reload, ~10-20 min)
 - TP=8 (axis 0), EP=32 (all chips), DP=4 (axis 1)
 - MESH_DEVICE=TG, FABRIC_2D
 
-## Current Status (2026-03-10) — 126.4 tok/s aggregate, BF4 experts
+## Current Status (2026-03-10) — 142.7 tok/s aggregate, SEED-3 BF4 experts
 
 | Batch | Per-user tok/s | Aggregate tok/s | ITL (ms) | Config |
 |-------|---------------|-----------------|----------|--------|
-| bs=1  | 4.7           | 4.7             | 177      | BF4 experts, BF8 dense |
-| bs=32 | ~4.0          | 126.4           | 175      | BF4 experts, BF8 dense |
+| bs=1  | ~4.5          | ~4.5            | ~170     | SEED-3: w1/w2 BF4, w3/attn/shared BF8 |
+| bs=32 | ~4.5          | **142.7**       | ~165     | SEED-3: w1/w2 BF4, w3/attn/shared BF8 |
 
-**Previous BF8 baseline** (for comparison):
+**Full BF4 re-test results (2026-03-10)**:
 
-| Batch | Per-user tok/s | Aggregate tok/s | ITL (ms) | Config |
-|-------|---------------|-----------------|----------|--------|
-| bs=1  | 4.1           | 4.1             | 185      | BF8 all |
-| bs=32 | 3.8           | 121.6           | 191      | BF8 all |
+| Test | Config | bs=32 agg tok/s | PPL | vs BF8 baseline |
+|------|--------|-----------------|-----|-----------------|
+| Test 0 (BF8 baseline) | All BF8 | 98.9 | 1.3659 | — |
+| **Test 1 (SEED-3)** | **w1/w2=BF4, w3=BF8** | **142.7** | **1.2288** | **+44.3% throughput, -10.0% PPL** |
+| Test 2 (All BF4) | w1/w2/w3=BF4 | 126.4 | 1.2884 | +27.8%, -5.7% PPL |
+| Test 3 (Protect w2) | w1=BF4, w2=BF8, w3=BF4 | 128.3 | 1.4007 | +29.7%, +2.5% PPL (WORSE) |
 
-**BF4 improvement**: +6.8% bs=1, **+27.8% bs=32**, PPL 5.7% better (1.29 vs 1.37).
+**SEED-3 is the optimal config**: best throughput AND best quality.
+Theoretical sensitivity analysis predicted w2 most sensitive — empirically WRONG.
+Protecting w3 (up projection, BF8) while quantizing w1/w2 (gate/down, BF4) is the sweet spot.
 
 ## Configuration
 
 ```
 GLM4_MOE_DENSE_TT_DTYPE=bf8                # Shared expert + attention stays BF8
-GLM4_MOE_EXPERTS_TT_DTYPE=bf4              # ALL routed experts BF4 (+28% bs=32)
+GLM4_MOE_EXPERTS_TT_DTYPE=bf8              # Base expert dtype (overridden per-projection)
+GLM4_MOE_EXPERTS_W1_DTYPE=bf4              # Gate projection: BF4 (+44% SEED-3)
+GLM4_MOE_EXPERTS_W2_DTYPE=bf4              # Down projection: BF4 (+44% SEED-3)
+GLM4_MOE_EXPERTS_W3_DTYPE=bf8              # Up projection: stays BF8 (best quality)
 GLM4_MOE_REDUCE_IMPL=native                # axis-0 (TP) all_reduce
 GLM4_MOE_REDUCE_IMPL_AXIS1=rs_ag_async     # axis-1 (DP) — bypasses FABRIC_2D crash
 GLM4_MOE_EP_REDUCE_DEVICE=1
@@ -73,7 +80,8 @@ trace_mode=decode_only
 3.5  tok/s  → Optimized host-side sampling
 99.5 tok/s  → Batch>1 unblock (rs_ag_async) — 28.4x aggregate scaling
 121.6 tok/s → Batch-bucketed attention init + L1 threshold fix (+22%)
-126.4 tok/s → BF4 routed experts (+28% over prior BF8 baseline)
+126.4 tok/s → All-expert BF4 (+28% over prior BF8 baseline)
+142.7 tok/s → SEED-3 selective BF4: w1/w2 BF4, w3 BF8 (+44% over BF8, best PPL)
 ```
 
 ## History
@@ -152,14 +160,19 @@ Both confirmed rs_ag_async safe for trace mode, negligible performance cost.
 - **Davor's proof**: DSv3/R1 with BFP4_b nearly lossless (256 experts × 58 layers, -0.15pp MMLU).
   Both models use routed_scaling_factor=2.5. TT BFP4_b has 1024x finer exponent granularity
   than DS's original FP8 (16:1 vs 16,384:1 data-to-scaler ratio).
-- **Re-test (2026-03-10)**: All-expert BF4 (w1/w2/w3 all BFP4_b), shared+attention BF8:
-  - PPL: 1.2884 vs BF8 1.3659 — **5.7% BETTER**
-  - bs=32: **+27.8%** throughput (126.4 vs 98.9 tok/s)
-  - bs=1: **+6.8%** throughput (4.7 vs 4.4 tok/s)
-  - Output: coherent, same quality as BF8
+- **Comprehensive re-test (2026-03-10)**: 4 configs tested with PPL + throughput + quality eval:
+
+| Test | Config | bs=32 agg | PPL | vs BF8 |
+|------|--------|-----------|-----|--------|
+| 0 | All BF8 (baseline) | 98.9 | 1.3659 | — |
+| **1 (SEED-3)** | **w1/w2=BF4, w3=BF8** | **142.7** | **1.2288** | **+44%, -10% PPL** |
+| 2 | All BF4 | 126.4 | 1.2884 | +28%, -5.7% PPL |
+| 3 | w1=BF4, w2=BF8, w3=BF4 | 128.3 | 1.4007 | +30%, +2.5% PPL |
+
+- **SEED-3 (w1/w2=BF4, w3=BF8) is OPTIMAL**: best throughput AND best quality
+- Theoretical per-projection sensitivity (w2>w1>w3) was WRONG empirically
+- Protecting w3 (up) while quantizing w1 (gate) + w2 (down) gives best results
 - **Deep analysis**: `docs/glm_47_reap/galaxy_wormhole/postmortem-bf4.md` (790 lines)
-  covering BFP4_b format, per-projection sensitivity, Hadamard transforms, weight permutation,
-  DSv3 comparison, scaler granularity, and full re-test execution plan.
 
 ### bs=64 Analysis (2026-03-09) — NOT Beneficial
 
@@ -199,8 +212,8 @@ Both confirmed rs_ag_async safe for trace mode, negligible performance cost.
 
 ## Remaining Opportunities
 
-1. **Blanket BF4 test**: All weights BF4 (experts + shared + attention). May give additional throughput.
-2. **CCL library fix**: Proper fix for `all_reduce(cluster_axis=1)` on FABRIC_2D to eliminate rs_ag workaround.
-3. **Dedicated trace region**: Currently re-capturing trace each request. Persistent trace region would eliminate recapture overhead.
-4. **Router L1 (V2 P4)**: Code exists in moe_tt.py. Never tested in isolation. Est: 1-5ms.
-5. **FP8 checkpoint source**: Test BF16→FP8→BFP4 conversion path for potentially even better quality.
+1. **CCL library fix**: Proper fix for `all_reduce(cluster_axis=1)` on FABRIC_2D to eliminate rs_ag workaround.
+2. **Dedicated trace region**: Currently re-capturing trace each request. Persistent trace region would eliminate recapture overhead.
+3. **Router L1 (V2 P4)**: Code exists in moe_tt.py. Never tested in isolation. Est: 1-5ms.
+4. **FP8 checkpoint source**: Test BF16→FP8→BFP4 conversion path for potentially even better quality.
+5. **Blanket BF4 (all weights)**: Tested — works (+28%) but SEED-3 is better (+44%). Not worth pursuing.

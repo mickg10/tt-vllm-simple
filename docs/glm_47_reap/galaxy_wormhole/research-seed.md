@@ -52,22 +52,34 @@ The slice+clone to split fused output costs ~13ms, outweighing ~1.3ms dispatch s
 
 ---
 
-### SEED-3: All-Expert BF4 — CONFIRMED VIABLE ✅
+### SEED-3: Selective BF4 (w1/w2=BF4, w3=BF8) — CONFIRMED OPTIMAL ✅
 
-**Status**: CONFIRMED — Re-tested 2026-03-10 with rigorous methodology after Davor showed
-BFP4_b is nearly lossless on DSv3/R1 (256 experts × 58 layers, -0.15pp MMLU).
+**Status**: CONFIRMED OPTIMAL — Re-tested 2026-03-10 with 4 configs, rigorous PPL + throughput.
+Davor showed BFP4_b is nearly lossless on DSv3/R1 (256 experts × 58 layers, -0.15pp MMLU).
 
-**Original test (2026-03-10 morning)**: Selective BF4 (w1/w2=BF4, w3=BF8) appeared garbled.
-This was a flawed test — eyeball-only, no PPL, potential stale trace/cache artifact.
+**Original test (2026-03-10 morning)**: Selective BF4 appeared garbled.
+Flawed test — eyeball-only, no PPL, potential stale trace/cache artifact.
 
-**Re-test results (2026-03-10, all-expert BF4: w1/w2/w3 all BFP4_b)**:
-- **PPL: 1.2884 vs BF8 1.3659 — 5.7% BETTER (lower is better)**
-- **bs=32: +27.8% throughput** (126.4 vs 98.9 tok/s agg)
-- **bs=1: +6.8% throughput** (4.7 vs 4.4 tok/s)
-- **Output: COHERENT** — same quality as BF8 baseline
-- Shared expert stays BF8, attention stays BF8
+**Comprehensive re-test (2026-03-10, 4 configs)**:
 
-**Config**: `GLM4_MOE_EXPERTS_TT_DTYPE=bf4`, `GLM4_MOE_DENSE_TT_DTYPE=bf8`
+| Test | Config | bs=32 agg | PPL | vs BF8 |
+|------|--------|-----------|-----|--------|
+| 0 | All BF8 (baseline) | 98.9 | 1.3659 | — |
+| **1 (SEED-3)** | **w1/w2=BF4, w3=BF8** | **142.7** | **1.2288** | **+44%, -10% PPL** |
+| 2 | All BF4 (w1/w2/w3) | 126.4 | 1.2884 | +28%, -5.7% PPL |
+| 3 | w1=BF4, w2=BF8, w3=BF4 | 128.3 | 1.4007 | +30%, +2.5% PPL (WORSE) |
+
+**SEED-3 is OPTIMAL**: best throughput AND best quality of all tested configs.
+Theoretical per-projection sensitivity (w2>w1>w3) was WRONG empirically.
+Protecting w3 (up projection, BF8) while quantizing w1+w2 (gate+down, BF4) is the sweet spot.
+
+**Config**:
+```
+GLM4_MOE_EXPERTS_W1_DTYPE=bf4    # gate
+GLM4_MOE_EXPERTS_W2_DTYPE=bf4    # down
+GLM4_MOE_EXPERTS_W3_DTYPE=bf8    # up (protected)
+GLM4_MOE_DENSE_TT_DTYPE=bf8     # shared + attention
+```
 **Research sources**: Davor (DSv3/R1 BFP4 benchmarks), postmortem-bf4.md (execution plan + analysis)
 
 ---

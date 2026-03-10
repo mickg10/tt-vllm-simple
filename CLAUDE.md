@@ -443,7 +443,7 @@ On every session start or context compaction, re-read these files:
 
 ### Critical Rules (from lessons learned)
 
-- **BF4 status: UNDER RE-TEST** — previously banned (garbled output on REAP), but DSv3/R1 shows BFP4_b is nearly lossless on deep MoE. Re-testing with proper metrics. See `docs/glm_47_reap/galaxy_wormhole/postmortem-bf4.md` for execution plan.
+- **BF4 status: CONFIRMED VIABLE** — SEED-3 (w1/w2=BF4, w3=BF8) is optimal: +44% throughput, -10% PPL vs BF8. Original "garbled" test was flawed. See `docs/glm_47_reap/galaxy_wormhole/postmortem-bf4.md` for full analysis.
 - **MTP is BANNED (temporarily)** — Do NOT work on MTP speculative decode. Focus on megafusion first. MTP adds complexity and makes the codebase harder to optimize long-term. Revisit only after megafusion is complete.
 - **Program-count fusion is a dead end** — ~15us/program in trace mode, not worth weeks of C++.
 - **Tracy device profiler crashes GLM warmup** — use Python sync profiling instead.
