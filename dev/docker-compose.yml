@@ -215,7 +215,7 @@ services:
       retries: 3
     ipc: host
     privileged: true
-    restart: unless-stopped
+    restart: "no"
 
 volumes:
   tt-metal-build:

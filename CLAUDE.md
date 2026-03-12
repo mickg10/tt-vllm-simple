@@ -318,10 +318,11 @@ Five roles:
 | **Team Lead** | `team-lead` | Delegates, coordinates, evaluates results, Gemini inline analysis | Edit files, run docker, run benchmarks |
 | **Architect** | `architect` | Gemini deep analysis + Codex background verification, design optimizations | Edit files, run docker, run benchmarks |
 | **Implementer** | `implementer` | Edit code, restart containers, benchmark | Design optimizations, make architectural decisions |
-| **Researcher** | `<topic>-researcher` | Deep-dive code/papers, write detailed research docs | Edit code, run docker. READ-ONLY. Always opus 4.6. |
+| **Researcher** | `<topic>-researcher` | Deep-dive code/papers, write detailed research docs. **MUST use Gemini+Codex dual pipeline** (not just Opus). | Edit code, run docker. READ-ONLY. Always opus 4.6. |
 | **Codex-Verifier** | `codex-verifier` | Background Codex verification of findings | Edit code, run docker. Background only. |
 
 **ALL researchers MUST write detailed findings to `plan/<model>/<device>/<topic>.md` — not just messages.**
+**ALL researchers MUST use the Gemini+Codex dual-analysis pipeline** — a researcher that only reads files and reasons with its own Opus model is doing it wrong. Ping-pong: Gemini analyzes → Codex verifies → refine → repeat.
 
 ### CRITICAL: AI Analysis Workflow (MANDATORY)
 

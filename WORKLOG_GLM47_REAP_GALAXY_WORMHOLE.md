@@ -29,12 +29,19 @@ Use `--force-recreate` when env vars change (triggers weight reload, ~10-20 min)
 - TP=8 (axis 0), EP=32 (all chips), DP=4 (axis 1)
 - MESH_DEVICE=TG, FABRIC_2D
 
-## Current Status (2026-03-10) — 142.7 tok/s aggregate, SEED-3 BF4 experts
+## Current Status (2026-03-12) — 92 tok/s steady-state aggregate, SEED-3 BF4
 
-| Batch | Per-user tok/s | Aggregate tok/s | ITL (ms) | Config |
-|-------|---------------|-----------------|----------|--------|
-| bs=1  | ~4.5          | ~4.5            | ~170     | SEED-3: w1/w2 BF4, w3/attn/shared BF8 |
-| bs=32 | ~4.5          | **142.7**       | ~165     | SEED-3: w1/w2 BF4, w3/attn/shared BF8 |
+**All numbers from server-side TPOT histogram** (`vllm:time_per_output_token_seconds`),
+measured via delta method (before/after sum and count). Client-side wall-time is unreliable.
+
+| Batch | Steady-state TPOT | Aggregate tok/s | Config |
+|-------|-------------------|-----------------|--------|
+| bs=1  | 150-200ms         | ~5-6.7          | SEED-3: w1/w2 BF4, w3/attn/shared BF8 |
+| bs=32 | **348ms**         | **~92**         | SEED-3: w1/w2 BF4, w3/attn/shared BF8 |
+
+**Note**: Previous "142.7 tok/s" was wall-time aggregate from bench_itl.py, which is inflated
+because it includes prefill-decode overlap in the denominator. Server-side TPOT histogram is
+the ground truth for decode performance.
 
 **Full BF4 re-test results (2026-03-10)**:
 
@@ -67,7 +74,7 @@ GLM4_MOE_ATTN_FIDELITY=hifi
 GLM4_MOE_MOE_SPARSE_FIDELITY=hifi
 GLM4_MOE_FUSE_EXPERTS_GATE_UP=0            # Disabled: -14.6% regression
 MAX_NUM_SEQS=32
-decode_trace_batch_buckets=[1,4,8,16,32]
+decode_trace_batch_buckets=[32]          # Single bucket: prevents trace recapture crash
 trace_mode=decode_only
 ```
 
@@ -82,6 +89,7 @@ trace_mode=decode_only
 121.6 tok/s → Batch-bucketed attention init + L1 threshold fix (+22%)
 126.4 tok/s → All-expert BF4 (+28% over prior BF8 baseline)
 142.7 tok/s → SEED-3 selective BF4: w1/w2 BF4, w3 BF8 (+44% over BF8, best PPL)
+~92  tok/s → Corrected measurement: server-side TPOT histogram (348ms/step at bs=32)
 ```
 
 ## History
@@ -182,6 +190,60 @@ Both confirmed rs_ag_async safe for trace mode, negligible performance cost.
 - Weight DRAM reads already well-amortized at bs=32 (only ~13% of ITL)
 - **bs=32 is the architectural sweet spot**
 
+### Session 3: SEED-4/5/6 + GLM-4.7 Bringup (2026-03-10 to 2026-03-11)
+
+#### SEED-4: GLM-4.7 Base (358B) Bringup — COMPLETED
+- `zai-org/GLM-4.7` — 92 layers, 160 experts (top-8), hidden=5120, EP=32 (5 experts/device)
+- Config: all-BF4 experts, BF8 dense/attn/shared, KV=1024 BF16
+- **Key fix**: KV cache block count — `get_num_available_blocks_tt()` defaulted to 131K tokens.
+  Added GLM-4.7 match → 1024 tokens (48 blocks/layer = 138 MB KV vs 5.84 GB OOM).
+- **Result**: bs=1: 4.1 tok/s, bs=32: 104.0 tok/s agg — 27% slower than REAP (5 vs 3 experts/device)
+
+#### SEED-5: Fused Partial RoPE — CLOSED
+- `ttnn.experimental.rotary_embedding_llama` does NOT support `partial_rotary_factor`
+- No API parameter exists, kernel applies RoPE to ALL dimensions
+
+#### SEED-6: Add-Before-Reduce CCL — REJECTED
+- `FUSE_SHARED_EP_REDUCE=1` (the existing code IS SEED-6). rs_ag_async fixed the hang.
+- **Garbled output**: "Paris. The capital of The capital is The capital of..."
+- Correctness issue in fuse logic, not CCL deadlock
+
+### Session 4: Trace Stability Fixes (2026-03-11)
+
+Three trace stability fixes deployed:
+
+1. **trans_matrix_tt deallocation bug**: `_release_all_decode_traces()` deallocated
+   `self.rope["trans_matrix"]` (shared global). Fixed by removing from deallocation tuple.
+2. **Batch bucket rounding**: Round batch UP to nearest bucket [1,4,8,16,32]. Pad inputs.
+   Prevents trace recapture on every batch size change during continuous batching.
+3. **Release before capture**: `_decode_trace()` calls `_release_all_decode_traces()` before
+   capturing new trace. Ensures no active trace exists when allocating new buffers.
+
+Also: embed_tt clone fix inside trace (decoder_layer_tt deallocates residual input),
+prefill KV cache DP column fix (all 32 devices' caches filled, not just DP column 0).
+
+### Session 5: Trace Crash Fix + TPOT Verification (2026-03-12)
+
+**Crash root cause**: DRAM fragmentation on trace recapture. Specifically:
+- bs=1→bs=32: **CRASH** (2/2 reproducible) — small trace release fragments DRAM
+- bs=32→bs=1: OK — large→small allocation always succeeds
+- First-trace capture (any size): OK — no prior fragmentation
+
+**Fix**: `decode_trace_batch_buckets: [32]` — single bucket eliminates all trace recapture.
+bs=1 requests pad to 32 (replicate last entry). Same trace reused for all batch sizes.
+Trade-off: bs=1 TPOT increases from 150-200ms to ~350ms (padded to 32-wide trace).
+**Verified**: bs=1→bs=32 sequence passes cleanly.
+
+**TPOT verification**: Server-side TPOT histogram is definitive measurement.
+Previous "142.7 tok/s" was wall-time aggregate (inflated). Actual steady-state:
+- bs=32: 348ms TPOT = 92 tok/s aggregate (99% of samples in 300-400ms bucket)
+- bs=1: 150-200ms TPOT (histogram bucket)
+
+**Optimization research completed** (see `docs/glm_47_reap/galaxy_wormhole/research-next-optimizations.md`):
+1. DRAM weight prefetching (19-23%, HIGH effort — only path for large gains)
+2. Fused partial QK RoPE kernel (10%, HIGH effort)
+3. Q/K DRAM round-trip elimination + fused KV cache (3-4%, LOW effort)
+
 ## Dead Ends (Do NOT Retry)
 
 - **EP_L1=1** → garbled output (L1 incompatible with TG mesh CCL)
@@ -193,7 +255,11 @@ Both confirmed rs_ag_async safe for trace mode, negligible performance cost.
 - **bs=64** → works but 61.4 tok/s (WORSE, MoE EP=32 doubles cost)
 - **DP specialization** → MoE EP=32 requires all 32 chips per layer
 - **Async CCL overlap** → not real overlap in trace mode (single CQ)
-- **Weight prefetching** → no Wormhole support (Blackhole-only)
+- **Weight prefetching** → WH Galaxy DOES support it (Llama3 uses it), but requires multi-CQ, subdevice mode, trace rework. VERY HIGH effort.
+- **FUSE_SHARED_EP_REDUCE=1** → Phase 1: hang. Phase 2: hang fixed by rs_ag_async but **garbled output**
+- **SEED-6 (add-before-reduce)** → Same as FUSE_SHARED_EP_REDUCE. Garbled.
+- **Sparse matmul grid optimization** → CRASH: non-full-width grid causes "Invalid subtile broadcast type"
+- **Multi-bucket traces** → bs=1→bs=32 trace recapture crashes (DRAM fragmentation). Use single bucket [32].
 
 ## Key Files
 
@@ -210,23 +276,33 @@ Both confirmed rs_ag_async safe for trace mode, negligible performance cost.
 | `docker_tt/dev/docker-compose.galaxy.yml` | Galaxy-specific overrides |
 | `docker_tt/docs/glm_47_reap/galaxy_wormhole/` | Committed research reports |
 
-## Next Phase (2026-03-10+)
+## Next Phase (2026-03-12+)
 
-### SEED-4: GLM-4.7 Base (358B) Bringup — READY
-- `zai-org/GLM-4.7` (BF16) or `zai-org/GLM-4.7-FP8`
-- 64 layers, 160 experts — same `glm4_moe` code, zero changes for BF16
-- Memory: 6.53 GB/device (fits easily). Expected: **~174 tok/s** agg bs=32
-- FP8 needs ~50 LOC dequant (import from DSv3)
+### Priority 1: Q/K DRAM Round-Trip Elimination + Fused KV Cache (LOW effort, ~3-4%)
+- Change `ttnn.to_memory_config(q/k, DRAM)` → `L1_MEMORY_CONFIG` at attention_tt.py:678-679
+  (Q=24 KB, K=2 KB — both trivially fit L1. RMSNorm accepts L1 interleaved.)
+- Replace 2× `paged_update_cache` with 1× `paged_fused_update_cache` at attention_tt.py:699-704
+- Saves ~460 programs/decode (4 DRAM round-trips + 1 cache fusion × 92 layers)
 
-### SEED-5: Fused Partial RoPE (5-15%)
-- 20 element-wise DRAM ops per layer for Q+K RoPE → 2-4 ops
-- Test `ttnn.experimental.rotary_embedding_llama` for partial rotary support
+### Priority 2: DRAM Weight Prefetching (HIGH effort, 19-23%)
+- Port Llama3 Galaxy `ttnn.dram_prefetcher()` infrastructure
+- Subdevice architecture (sender + worker cores), global circular buffer
+- Phase 1: Prefetch attention + shared expert weights (~21.2 MB/layer/device, unconditional)
+- Phase 2: Routed expert weights via sparse_matmul global_cb params
+- **Only viable path for large gains** — DRAM-BW-bound at ~15% utilization
 
-### SEED-6: Add-Before-Reduce CCL (~4%)
-- Merge shared+routed TP reduce: add locally first, then 1 all_reduce instead of 2
-- NOT the same as FUSE_SHARED_EP_REDUCE (which hangs) — simpler, no axis-1 fusion
+### Priority 3: Fused Partial QK RoPE Kernel (HIGH effort, ~10%)
+- Replace 16 ops/layer with 2 (fused NeoX partial RoPE on Q+K)
+- Saves ~1,288 programs/decode
+- Requires new C++ kernel (ttnn.experimental.rotary_embedding_llama only does full-dim)
 
-### Other Remaining
-1. **CCL library fix**: Proper fix for `all_reduce(cluster_axis=1)` on FABRIC_2D
-2. **Dedicated trace region**: Eliminate trace recapture overhead
-3. **Sparse matmul grid utilization**: Only 56-67% of 72 cores used (rectangular constraint)
+### Completed Seeds
+- **SEED-0**: Batch>1 (rs_ag_async) — SHIPPED
+- **SEED-1**: Batch-bucketed attention (+22%) — SHIPPED
+- **SEED-3**: Selective BF4 (w1/w2=BF4, w3=BF8) — SHIPPED
+- **SEED-4**: GLM-4.7 Base bringup — COMPLETED
+
+### Closed Seeds
+- **SEED-2**: Fused gate+up — REJECTED (-14.6%)
+- **SEED-5**: Fused partial RoPE — CLOSED (no API support)
+- **SEED-6**: Add-before-reduce CCL — REJECTED (garbled output)
