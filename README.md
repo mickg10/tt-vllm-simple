@@ -165,7 +165,8 @@ make stop-dev
 | GLM-4.7-Flash | `glm47_flash` | T3K (8 WH) | Traced decode | 7.0 tok/s | [tt-metal](https://github.com/mickg10/tt-metal/tree/glm47_flash), [vllm](https://github.com/mickg10/vllm/tree/glm47_flash) |
 | GLM-4.7-Flash | `galaxy_wormhole` | Galaxy WH (32 WH) | Traced decode | 8.1 tok/s | [tt-metal](https://github.com/mickg10/tt-metal/tree/galaxy_wormhole), [vllm](https://github.com/mickg10/vllm/tree/galaxy_wormhole) |
 | GLM-4.7-Flash | `glm47_flash_blackhole` | Galaxy BH (32 BH) | Traced decode | 8.6 tok/s | [tt-metal](https://github.com/mickg10/tt-metal/tree/glm47_flash_blackhole) |
-| GLM-4.7-REAP-218B | `glm47_reap_268b` | Galaxy WH (32 WH) | Traced decode + host sampling | 3.5 tok/s | [tt-metal](https://github.com/mickg10/tt-metal/tree/glm47_reap_268b), [vllm](https://github.com/mickg10/vllm/tree/glm47_reap_268b) |
+| GLM-4.7-REAP-218B | `glm47_reap_268b` | Galaxy WH (32 WH) | SEED-3 BF4, 92 tok/s agg bs=32 | ~5-6.7 tok/s | [tt-metal](https://github.com/mickg10/tt-metal/tree/glm47_reap_268b), [vllm](https://github.com/mickg10/vllm/tree/glm47_reap_268b) |
+| GLM-4.7 (358B) | `glm47_reap_268b` | Galaxy WH (32 WH) | All-BF4 experts, 104 tok/s agg bs=32 | 4.1 tok/s | Same branch as REAP |
 
 ### Galaxy Wormhole (32 Wormhole chips, TG mesh 8x4)
 

@@ -199,6 +199,43 @@ Both confirmed rs_ag_async safe for trace mode, negligible performance cost.
   Added GLM-4.7 match → 1024 tokens (48 blocks/layer = 138 MB KV vs 5.84 GB OOM).
 - **Result**: bs=1: 4.1 tok/s, bs=32: 104.0 tok/s agg — 27% slower than REAP (5 vs 3 experts/device)
 
+#### FP8 Dequant Bug Found (Affects GLM-4.7 + REAP FP8 Models)
+
+Both FP8 models exist on HuggingFace:
+- `cerebras/GLM-4.7-REAP-218B-A32B-FP8` (220 GB, E4M3 compressed-tensors)
+- `zai-org/GLM-4.7-FP8` (362 GB, E4M3 compressed-tensors)
+
+**BUG**: `_maybe_dequant_fp8()` in `layer_weights.py:73` inverts `_scale` keys, but
+`_scale` in compressed-tensors convention is ALREADY the dequant multiplier. Both `_scale`
+and `_scale_inv` should be passed directly to `dequantize_tensor()` without inversion.
+
+```python
+# BUGGY (current code):
+inv_scale = (1.0 / state[scale_key].float().clamp(min=1e-12))
+
+# CORRECT (1-line fix):
+inv_scale = state[scale_key].float()
+```
+
+Proof: `compressed_tensors/quantization/lifecycle/forward.py:448` does `dequant = x_q * scale`,
+and DSv3's `_scale_inv = 1/quant_scale` is also the dequant multiplier directly.
+
+**Impact**: All FP8 weights loaded with inverted scales → garbage weights → garbled output.
+Current WH Galaxy deployment uses BF16 model (`cerebras/GLM-4.7-REAP-218B-A32B`) and
+bypasses all FP8 code, so NOT affected.
+
+See `plan/glm47_reap/galaxy_wormhole/fp8-quant-analysis.md` for full analysis (Gemini+Codex verified).
+
+#### GLM-4.7 Base (358B) vs REAP (268B) Comparison
+
+| Model | Experts | Per-device | bs=1 | bs=32 agg |
+|-------|---------|------------|------|-----------|
+| GLM-4.7-REAP-218B | 96 routed (top-8) | 3 experts | ~5-6.7 tok/s | **92 tok/s** (TPOT-corrected) |
+| GLM-4.7 Base (358B) | 160 routed (top-8) | 5 experts | **4.1 tok/s** | 104 tok/s (wall-time) |
+
+REAP is faster at bs=1 because fewer experts = less DRAM weight reads per decode.
+GLM-4.7 Base bs=32 appears higher because measured wall-time (not TPOT-corrected like REAP).
+
 #### SEED-5: Fused Partial RoPE — CLOSED
 - `ttnn.experimental.rotary_embedding_llama` does NOT support `partial_rotary_factor`
 - No API parameter exists, kernel applies RoPE to ALL dimensions
@@ -244,6 +281,35 @@ Previous "142.7 tok/s" was wall-time aggregate (inflated). Actual steady-state:
 2. Fused partial QK RoPE kernel (10%, HIGH effort)
 3. Q/K DRAM round-trip elimination + fused KV cache (3-4%, LOW effort)
 
+### Session 6: Quick Win Testing (2026-03-12)
+
+#### P1: Q/K L1 — NEUTRAL (+0.26%, noise)
+Changed `ttnn.to_memory_config(q/k, ttnn.DRAM_MEMORY_CONFIG)` → `ttnn.L1_MEMORY_CONFIG` at
+attention_tt.py:678-679. Feature-flagged: `GLM4_MOE_QK_L1=1`.
+
+A/B test with server-side TPOT histogram (3 runs each):
+- **QK_L1=1**: 349.3ms TPOT (best steady-state)
+- **QK_L1=0**: 348.4ms TPOT (best steady-state)
+- **Delta: +0.9ms = +0.26%** — within measurement noise
+
+Q=98KB + K=8KB per layer → ~9μs DRAM traffic saved. Invisible at 348ms. Program dispatch
+elimination also invisible in trace mode (dispatches baked into trace).
+Shipped as default (harmless). No performance impact.
+
+#### P3 Workaround: cos/sin Padding — IMPOSSIBLE
+Architect proposed padding cos=1.0, sin=0.0 for non-rotary dims to eliminate 8-10 ops/call
+in `_apply_partial_rope_decode`. **DISPROVEN**: NeoX `rotate_half` splits at `dim // 2`.
+Extending from rotary_dim=64 to head_dim=128 shifts split boundary from 32 to 64, mixing
+pass-through dims into rotary computation. Only works with GPT-J interleaved rotation.
+
+#### P1b: Fused KV Cache — SKIPPED
+Expected ~0.4% (92 fewer dispatches). Given P1 showed 368 fewer dispatches = 0%,
+P1b not worth the MEDIUM risk (core grid management). Skipped.
+
+**Key lesson**: Software-only "quick wins" (dispatch elimination, small DRAM traffic savings)
+have ZERO measurable impact on DRAM-BW-bound trace mode. Only DRAM weight prefetching
+(overlapping weight reads with compute) can meaningfully reduce TPOT.
+
 ## Dead Ends (Do NOT Retry)
 
 - **EP_L1=1** → garbled output (L1 incompatible with TG mesh CCL)
@@ -255,11 +321,13 @@ Previous "142.7 tok/s" was wall-time aggregate (inflated). Actual steady-state:
 - **bs=64** → works but 61.4 tok/s (WORSE, MoE EP=32 doubles cost)
 - **DP specialization** → MoE EP=32 requires all 32 chips per layer
 - **Async CCL overlap** → not real overlap in trace mode (single CQ)
-- **Weight prefetching** → WH Galaxy DOES support it (Llama3 uses it), but requires multi-CQ, subdevice mode, trace rework. VERY HIGH effort.
 - **FUSE_SHARED_EP_REDUCE=1** → Phase 1: hang. Phase 2: hang fixed by rs_ag_async but **garbled output**
 - **SEED-6 (add-before-reduce)** → Same as FUSE_SHARED_EP_REDUCE. Garbled.
 - **Sparse matmul grid optimization** → CRASH: non-full-width grid causes "Invalid subtile broadcast type"
 - **Multi-bucket traces** → bs=1→bs=32 trace recapture crashes (DRAM fragmentation). Use single bucket [32].
+- **Q/K L1 interleaved** → +0.26% (noise). Dispatch/DRAM savings invisible in trace mode.
+- **cos/sin padding for partial RoPE** → IMPOSSIBLE (NeoX rotation shifts dim//2 boundary)
+- **Fused KV cache** → skipped, expected <0.4% given P1 result
 
 ## Key Files
 
@@ -278,20 +346,18 @@ Previous "142.7 tok/s" was wall-time aggregate (inflated). Actual steady-state:
 
 ## Next Phase (2026-03-12+)
 
-### Priority 1: Q/K DRAM Round-Trip Elimination + Fused KV Cache (LOW effort, ~3-4%)
-- Change `ttnn.to_memory_config(q/k, DRAM)` → `L1_MEMORY_CONFIG` at attention_tt.py:678-679
-  (Q=24 KB, K=2 KB — both trivially fit L1. RMSNorm accepts L1 interleaved.)
-- Replace 2× `paged_update_cache` with 1× `paged_fused_update_cache` at attention_tt.py:699-704
-- Saves ~460 programs/decode (4 DRAM round-trips + 1 cache fusion × 92 layers)
+### ~~Priority 1: Q/K L1 + Fused KV Cache~~ — TESTED, NEUTRAL/SKIPPED (Session 6)
 
-### Priority 2: DRAM Weight Prefetching (HIGH effort, 19-23%)
+### Priority 1 (REVISED): DRAM Weight Prefetching (HIGH effort, 19-23%)
 - Port Llama3 Galaxy `ttnn.dram_prefetcher()` infrastructure
 - Subdevice architecture (sender + worker cores), global circular buffer
 - Phase 1: Prefetch attention + shared expert weights (~21.2 MB/layer/device, unconditional)
 - Phase 2: Routed expert weights via sparse_matmul global_cb params
 - **Only viable path for large gains** — DRAM-BW-bound at ~15% utilization
 
-### Priority 3: Fused Partial QK RoPE Kernel (HIGH effort, ~10%)
+### Priority 2 (REVISED): Native Fused Partial QK RoPE C++ Kernel (HIGH effort, ~3%)
+- cos/sin padding workaround IMPOSSIBLE (NeoX rotation, Session 6)
+- Requires new C++ kernel with `rotary_dim` param + NeoX half-rotation support
 - Replace 16 ops/layer with 2 (fused NeoX partial RoPE on Q+K)
 - Saves ~1,288 programs/decode
 - Requires new C++ kernel (ttnn.experimental.rotary_embedding_llama only does full-dim)

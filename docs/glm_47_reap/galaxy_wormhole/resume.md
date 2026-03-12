@@ -1,11 +1,11 @@
 # GLM-4.7-REAP-218B Galaxy Wormhole — Resume State
 
-**Date**: 2026-03-12 (trace crash fix + TPOT verification)
+**Date**: 2026-03-12 (Session 6: quick wins tested — Q/K L1 neutral, cos/sin pad impossible)
 **Model**: cerebras/GLM-4.7-REAP-218B-A32B — 92 layers, 96 routed experts (top-8), GQA 96Q/8KV
 **Hardware**: Galaxy Wormhole, 32 chips, MESH_DEVICE=TG, Mesh(8,4), TP=8, EP=32, DP=4
 **REAP Current**: bs=1: **150-200ms TPOT** (~5-6.7 tok/s), bs=32: **348ms TPOT = 92 tok/s agg** — SEED-3 BF4
 **GLM-4.7 Current**: bs=1: **4.1 tok/s**, bs=32: **104.0 tok/s agg** — all-BF4 experts, BF8 dense
-**Container**: HEALTHY, single-bucket [32] trace, SEED-3 BF4
+**Container**: HEALTHY, single-bucket [32] trace, SEED-3 BF4, QK_L1=1
 
 **MEASUREMENT NOTE**: All performance numbers from server-side TPOT histogram
 (`vllm:time_per_output_token_seconds`), measured via delta method (before/after sum and count).
@@ -105,13 +105,54 @@ All tests measured consistently with same methodology, so relative comparisons a
 
 ---
 
-## Next Priorities
+## Session 6: Quick Win Testing (2026-03-12)
 
-1. **Q/K DRAM round-trip elimination + fused KV cache** (LOW effort, ~3-4%)
-2. **DRAM weight prefetching** (HIGH effort, 19-23% — only path for large gains)
-3. **Fused partial QK RoPE kernel** (HIGH effort, ~10%)
+### P1: Q/K DRAM Round-Trip Elimination — NEUTRAL (+0.26%, noise)
+A/B test with server-side TPOT histogram:
+- **QK_L1=1**: 349.3ms TPOT (best of 3 runs)
+- **QK_L1=0**: 348.4ms TPOT (best of 3 runs)
+- **Delta: +0.9ms = +0.26%** — within measurement noise
 
-See `research-next-optimizations.md` for full details.
+Root cause of no improvement: In trace mode, program dispatches are baked in.
+The actual DRAM traffic saved (Q=98KB + K=8KB per layer) is ~9μs — invisible at 348ms.
+Shipped as default (harmless), but no performance impact.
+
+### P3 Workaround: cos/sin Padding for Fused RoPE — IMPOSSIBLE
+Architect proposed padding cos=1.0, sin=0.0 for non-rotary dims to use full-dim RoPE kernel.
+**DISPROVEN**: NeoX-style `rotate_half` splits at `dim // 2`. Extending from rotary_dim=64 to
+head_dim=128 shifts the split boundary from 32 to 64, mixing pass-through dims into rotary
+computation. Only works with GPT-J interleaved rotation, NOT NeoX.
+
+### P1b: Fused KV Cache — SKIPPED
+Architect estimated ~0.4% (92 fewer dispatches). Given P1's result (368 fewer dispatches = 0%),
+P1b would be even smaller. Not worth MEDIUM risk (core grid management).
+
+### FP8 Dequant Bug Documented
+Scale inversion bug in `_maybe_dequant_fp8()` at `layer_weights.py:73` — inverts `_scale`
+but `_scale` is already the dequant multiplier. 1-line fix needed. Does NOT affect current
+BF16 model deployment.
+
+---
+
+## Next Priorities (REVISED)
+
+1. **DRAM weight prefetching** (HIGH effort, 19-23% — ONLY viable path for large gains)
+   - Port Blackhole-only `ttnn.dram_prefetcher()` to Wormhole Galaxy
+   - 3-5 days for Phase 1 (attention + shared expert weights)
+   - sparse_matmul + global_cb for routed experts (untested, Phase 2)
+2. **Native fused partial QK RoPE C++ kernel** (HIGH effort, ~3%)
+   - cos/sin padding workaround IMPOSSIBLE (NeoX rotation)
+   - Needs new C++ kernel with `rotary_dim` param + NeoX rotation support
+   - 3-5 days
+3. **FP8 dequant bug fix** (LOW effort, enables FP8 source model loading)
+   - 1-line fix in `layer_weights.py:73`
+   - No performance benefit for current deployment (BF16 source)
+
+**Key lesson**: Software-only "quick wins" (dispatch elimination, small DRAM savings)
+have effectively ZERO impact on DRAM-BW-bound trace mode execution. Only DRAM weight
+prefetching can meaningfully improve throughput.
+
+See `implementation-plan-session6.md` in plan/ for full architect analysis.
 
 ---
 
@@ -128,6 +169,9 @@ See `research-next-optimizations.md` for full details.
 - Sparse matmul grid optimization → CRASH (non-full-width grid incompatible)
 - SEED-5 (fused partial RoPE) → no API support
 - SEED-6 (add-before-reduce) → garbled output
+- **Q/K L1 interleaved** → +0.26% (noise). Dispatch/traffic elimination invisible in trace mode.
+- **cos/sin padding for partial RoPE** → IMPOSSIBLE (NeoX rotation incompatible)
+- **Fused KV cache** → skipped, expected <0.4% based on P1 result
 
 ## Key Files
 
