@@ -258,4 +258,33 @@ echo ""
 echo "=== Dev setup complete, starting vLLM ==="
 echo ""
 
+# Patch: disable GLM-4.7 thinking for ALL GLM-4.7 variants (not just Flash).
+# The image entrypoint only matches GLM-4.7-Flash. This catches GLM-4.7 Full too.
+if [ "${GLM_DEFAULT_DISABLE_THINKING:-0}" = "1" ] \
+    && echo "${HF_MODEL:-}" | grep -qE "^zai-org/GLM-4\.7" \
+    && ! echo " $* " | grep -q -- " --chat-template "; then
+    export GLM_CHAT_TEMPLATE_FILE="${GLM_CHAT_TEMPLATE_FILE:-/tmp/glm47_default_no_think.jinja}"
+    if python3 - <<'PY' >/dev/null 2>&1
+import os
+from transformers import AutoTokenizer
+model_id = os.environ.get("HF_MODEL", "")
+output_path = os.environ.get("GLM_CHAT_TEMPLATE_FILE", "/tmp/glm47_default_no_think.jinja")
+pattern = "enable_thinking is defined and not enable_thinking"
+replacement = "enable_thinking is not defined or not enable_thinking"
+tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=False)
+chat_template = getattr(tokenizer, "chat_template", None)
+if not chat_template:
+    raise RuntimeError("No chat_template")
+patched = chat_template.replace(pattern, replacement)
+with open(output_path, "w") as f:
+    f.write(patched)
+PY
+    then
+        echo "Using GLM chat template with thinking disabled: ${GLM_CHAT_TEMPLATE_FILE}"
+        set -- "--chat-template" "${GLM_CHAT_TEMPLATE_FILE}" "$@"
+    else
+        echo "WARNING: Could not generate GLM no-thinking template"
+    fi
+fi
+
 exec /usr/local/bin/entrypoint.sh "$@"

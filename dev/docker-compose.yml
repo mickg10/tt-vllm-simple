@@ -22,6 +22,8 @@ services:
       # so we mount those paths into the container to keep `git describe` etc working.
       - ${WORKSPACE_PATH}/tt-metal:${WORKSPACE_PATH}/tt-metal:rw
       - ${WORKSPACE_PATH}/vllm:${WORKSPACE_PATH}/vllm:rw
+      # Chat template for thinking-disable (GLM-4.7 Full/Flash)
+      - ${WORKSPACE_PATH}/docker_tt/dev/glm47_no_think.jinja:/tmp/glm47_no_think.jinja:ro
       - /home/ttuser/src_docker/tt-metal.git:/home/ttuser/src_docker/tt-metal.git:ro
       - /home/ttuser/src_docker/vllm.git:/home/ttuser/src_docker/vllm.git:ro
       # Standard caches
@@ -146,6 +148,11 @@ services:
       - GLM4_MOE_EXPERTS_W3_DTYPE=${GLM4_MOE_EXPERTS_W3_DTYPE:-}
       - GLM4_MOE_TP=${GLM4_MOE_TP:-}
       - GLM4_MOE_EP=${GLM4_MOE_EP:-}
+      - GLM4_MOE_MTP=${GLM4_MOE_MTP:-}
+      - GLM4_MOE_MTP_TRACED=${GLM4_MOE_MTP_TRACED:-}
+      - GLM4_MOE_MTP_MAX_BATCH=${GLM4_MOE_MTP_MAX_BATCH:-}
+      - GLM4_MOE_MTP_DEVICE_EMBED=${GLM4_MOE_MTP_DEVICE_EMBED:-}
+      - GLM4_MOE_PREFILL_CHUNK_SIZE=${GLM4_MOE_PREFILL_CHUNK_SIZE:-}
       - GLM4_MOE_ENABLE_MOE=${GLM4_MOE_ENABLE_MOE:-}
       - GLM4_MOE_MOE_EXPERTS_IMPL=${GLM4_MOE_MOE_EXPERTS_IMPL:-}
       - GLM4_MOE_MOE_ROUTER_IMPL=${GLM4_MOE_MOE_ROUTER_IMPL:-}
@@ -195,9 +202,8 @@ services:
       - --port=8088
       - --enable-prefix-caching
       # Required for OpenAI "tools" requests (used by opencode and many UIs).
-      # Tool calling disabled for REAP benchmarking (glm47 parser not available)
-      # - --enable-auto-tool-choice
-      # - --tool-call-parser=glm47
+      - --enable-auto-tool-choice
+      - --tool-call-parser=hermes
       # NOTE: Do NOT enable a reasoning parser by default.
       #
       # The `glm45` parser expects the model output stream to contain <think>...
@@ -209,6 +215,7 @@ services:
       # patched chat template. If/when we re-enable reasoning, add
       # `--reasoning-parser` back behind a dedicated env-file.
       - --override-tt-config=${OVERRIDE_TT_CONFIG:-{}}
+      - --chat-template=${GLM_CHAT_TEMPLATE_FILE:-/tmp/glm47_no_think.jinja}
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8088/health"]
       interval: 30s

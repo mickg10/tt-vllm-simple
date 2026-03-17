@@ -91,11 +91,11 @@ if [ -n "${HF_MODEL}" ] && ! echo "$@" | grep -q -- "--model"; then
     set -- "--model" "${HF_MODEL}" "$@"
 fi
 
-# For GLM-4.7-Flash, disable thinking by default at the chat-template layer.
+# For GLM-4.7 models, disable thinking by default at the chat-template layer.
 # This keeps user-facing outputs concise and avoids long hidden-reasoning runs,
 # while still allowing explicit opt-in via request chat_template_kwargs.
 if [ "${GLM_DEFAULT_DISABLE_THINKING:-0}" = "1" ] \
-    && [ "${HF_MODEL:-}" = "zai-org/GLM-4.7-Flash" ] \
+    && echo "${HF_MODEL:-}" | grep -qE "^zai-org/GLM-4\.7" \
     && ! echo " $* " | grep -q -- " --chat-template "; then
     export GLM_CHAT_TEMPLATE_FILE="${GLM_CHAT_TEMPLATE_FILE:-/tmp/glm47_default_no_think.jinja}"
 
