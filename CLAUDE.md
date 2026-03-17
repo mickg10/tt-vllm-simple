@@ -96,6 +96,18 @@ cp .env.example .env
 | MESH_DEVICE | N300 | Device config: N150, N300, T3K, TG |
 | BUILD_JOBS | 16 | Parallel jobs for source build |
 
+## CRITICAL: ALWAYS SOURCE BUILD FOR WORKTREE WORKSPACES
+
+**NEVER use `SKIP_TT_METAL_BUILD=1` in dev worktrees.** The prebuilt `_ttnn.so` from the
+Docker base image is compiled for a different tt-metal commit than the bind-mounted source.
+This causes silent correctness bugs (e.g., broken SDPA decode producing garbled output).
+
+**Every `.env` file in a worktree workspace MUST have `SKIP_TT_METAL_BUILD=0`.**
+First container start takes ~30 min for C++ build (cached for subsequent starts).
+
+**NEVER run `docker system prune -af`** — destroys images, volumes, and venv cache.
+Use `docker rm -f $(docker ps -aq)` for container cleanup instead.
+
 ## Build Variants
 
 | Aspect | Prebuilt | Source | Dev |
@@ -106,6 +118,8 @@ cp .env.example .env
 | Distributed | No | Yes | Yes |
 | Code changes | Rebuild | Rebuild | Instant (Python) |
 | Use case | Production | CI/Testing | Active development |
+
+**For worktree dev: ALWAYS use Dev variant with `SKIP_TT_METAL_BUILD=0`.**
 
 ## Troubleshooting
 

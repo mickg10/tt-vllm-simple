@@ -12,6 +12,7 @@ services:
       - /home/mick/models:/home/mick/models:ro
     environment:
       - ARCH_NAME=blackhole
+      - TT_METAL_DISABLE_MULTI_AERISC=${TT_METAL_DISABLE_MULTI_AERISC:-}
       # GLM4_MOE env vars (full model, not glm4_moe_lite)
       - GLM4_MOE_TP=${GLM4_MOE_TP:-}
       - GLM4_MOE_EP=${GLM4_MOE_EP:-}

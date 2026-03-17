@@ -65,7 +65,20 @@ build_tt_metal() {
     # Recent tt-metal requires CMake >= 3.24. The dev container bind-mounts a
     # persistent venv at /opt/venv, so we must ensure the correct CMake is
     # installed into the volume, not just baked into the image.
+    # Ensure venv exists (volume may have been cleared)
+    if [ ! -f /opt/venv/bin/activate ]; then
+        echo "Creating venv in /opt/venv (volume was empty)..."
+        python3 -m venv /opt/venv
+    fi
     source /opt/venv/bin/activate
+
+    # Ensure ninja is in the venv (cmake looks for /opt/venv/bin/ninja specifically)
+    if [ ! -f /opt/venv/bin/ninja ]; then
+        echo "Installing ninja into venv..."
+        pip install ninja
+        hash -r || true
+    fi
+
     local required_cmake="3.24.0"
     local cmake_ver=""
     if command -v cmake &>/dev/null; then
