@@ -201,11 +201,9 @@ services:
       - --block-size=${VLLM_BLOCK_SIZE:-64}
       - --port=8088
       - --enable-prefix-caching
-      # Tool calling DISABLED — GLM-4.7 Full at BF4 generates garbage when tools
-      # are injected into the prompt. Without these flags, vLLM rejects tool
-      # requests with 400, and opencode falls back to prompt-based tool parsing.
-      # - --enable-auto-tool-choice
-      # - --tool-call-parser=glm45
+      # Tool calling — uses GLM-4 MoE native <tool_call> XML format
+      - --enable-auto-tool-choice
+      - --tool-call-parser=glm45
       # NOTE: Do NOT enable a reasoning parser by default.
       #
       # The `glm45` parser expects the model output stream to contain <think>...

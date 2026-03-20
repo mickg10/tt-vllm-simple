@@ -269,13 +269,16 @@ import os
 from transformers import AutoTokenizer
 model_id = os.environ.get("HF_MODEL", "")
 output_path = os.environ.get("GLM_CHAT_TEMPLATE_FILE", "/tmp/glm47_default_no_think.jinja")
-pattern = "enable_thinking is defined and not enable_thinking"
-replacement = "enable_thinking is not defined or not enable_thinking"
 tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=False)
 chat_template = getattr(tokenizer, "chat_template", None)
 if not chat_template:
     raise RuntimeError("No chat_template")
-patched = chat_template.replace(pattern, replacement)
+# Replace the generation prompt to output empty string instead of </think>
+# when thinking is disabled. The old patch produced </think> which confuses
+# the model (closing tag with no opening tag, especially with tool prompts).
+old = "{{- '</think>' if (enable_thinking is defined and not enable_thinking) else '<think>' -}}"
+new = "{{- '' if (enable_thinking is not defined or not enable_thinking) else '<think>' -}}"
+patched = chat_template.replace(old, new)
 with open(output_path, "w") as f:
     f.write(patched)
 PY
