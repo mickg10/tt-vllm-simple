@@ -1,0 +1,29 @@
+# Test compose overlay — runs tt-metal tests instead of vLLM
+#
+# Usage:
+#   docker compose --env-file dev/.env.glm47_full_16k \
+#     -f dev/docker-compose.yml -f dev/docker-compose.galaxy.yml \
+#     -f dev/docker-compose.test.yml \
+#     run --rm tt-test
+#
+# Or run a specific test file:
+#   docker compose ... run --rm tt-test \
+#     python -m pytest tests/ttnn/unit_tests/operations/test_glm_subdevice_ops.py -v -s
+
+services:
+  tt-test:
+    extends:
+      service: vllm-tt
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        echo "=== Test Environment ==="
+        cd /tt-metal
+        source /opt/venv/bin/activate 2>/dev/null || true
+        pip install -q pytest multiprocess psutil 2>/dev/null || true
+        echo "Running: $${@:-python -m pytest tests/ttnn/unit_tests/operations/test_sub_device_ops.py tests/ttnn/unit_tests/operations/test_glm_subdevice_ops.py -v}"
+        exec $${@:-python -m pytest tests/ttnn/unit_tests/operations/test_sub_device_ops.py tests/ttnn/unit_tests/operations/test_glm_subdevice_ops.py -v}
+    healthcheck:
+      disable: true
+    restart: "no"
