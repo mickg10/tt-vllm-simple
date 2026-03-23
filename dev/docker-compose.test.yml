@@ -13,6 +13,7 @@
 services:
   tt-test:
     extends:
+      file: docker-compose.yml
       service: vllm-tt
     entrypoint: ["/bin/bash", "-c"]
     command:
