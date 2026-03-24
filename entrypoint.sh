@@ -158,4 +158,4 @@ ModelRegistry.register_model('TTGlm4MoeLiteForCausalLM', 'models.demos.glm4_moe_
 ModelRegistry.register_model('TTArceeForCausalLM', 'models.tt_transformers.tt.generator_vllm:TTArceeForCausalLM')
 
 runpy.run_module('vllm.entrypoints.openai.api_server', run_name='__main__')
-" --host 0.0.0.0 --disable-frontend-multiprocessing "$@"
+" --host 0.0.0.0 "$@"
